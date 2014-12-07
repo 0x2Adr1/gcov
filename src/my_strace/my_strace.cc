@@ -1,15 +1,14 @@
 #include <sys/types.h> // pid_t
 #include <sys/ptrace.h> // ptrace()
 #include <sys/wait.h> // waitpid()
-#include <sys/reg.h> // ORIG_EAX, EAX
-#include <sys/user.h>
+#include <sys/user.h> // struct user_regs_struct
 #include <cstdlib> // std::exit()
-#include <cstdio> // printf
 #include <iostream> // std::cerr
 
 #include <unistd.h> // fork()
 
 #include "my_strace.hh"
+#include "syscall_table.hh" // see syscall_table.py
 
 static void trace_child(pid_t pid_child)
 {
@@ -19,6 +18,11 @@ static void trace_child(pid_t pid_child)
 
     // our child tell us that he is starting execution
     wait(&status);
+
+    const std::string syscall_name[] =
+    {
+        SYSCALL_NAME()
+    };
 
     while (true)
     {
@@ -33,13 +37,14 @@ static void trace_child(pid_t pid_child)
 
         if (enter_syscall)
         {
-            // TODO: print syscall name
+            std::cout << syscall_name[user_regs.orig_rax] << "() = ";
             enter_syscall = false;
         }
 
         else
         {
-            std::cout << user_regs.orig_rax << std::endl;
+            std::cout << static_cast<signed long long>(user_regs.rax);
+            std::cout << std::endl;
             enter_syscall = true;
         }
     }
@@ -71,6 +76,4 @@ void my_strace(const std::string& bin_path, char *argv[])
 
     else
         trace_child(pid_child);
-
-    (void) argv;
 }

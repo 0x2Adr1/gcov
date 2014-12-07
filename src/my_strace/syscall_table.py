@@ -16,15 +16,15 @@ def main():
 
         l = file_content.split('#define __NR_')
 
-        with open('syscall_name.hh', 'w') as f_out:
-            f_out.write('#ifndef SYSCALL_NAME_HH\n')
-            f_out.write('# define SYSCALL_NAME_HH\n')
-            f_out.write('\n# define SYSCALL_NAME() \\\n')
+        with open('syscall_table.hh', 'w') as f_out:
+            f_out.write('#ifndef SYSCALL_TABLE_HH\n')
+            f_out.write('# define SYSCALL_TABLE_HH\n')
+            f_out.write('\n# define SYSCALL_TABLE() \\\n')
             for e in l:
                 syscall_name = e.split()
                 if len(syscall_name) > 0:
                     f_out.write('    "' + syscall_name[0] + '", \\\n')
-            f_out.write('\n#endif /* !SYSCALL_NAME_HH\n')
+            f_out.write('\n#endif /* !SYSCALL_TABLE_HH */\n')
 
 if __name__ == '__main__':
     main()
