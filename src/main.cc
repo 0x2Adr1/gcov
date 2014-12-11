@@ -2,6 +2,7 @@
 #include <cstdlib>
 
 #include "my_strace/my_strace.hh"
+#include "my_sscov/my_sscov.hh"
 
 static void usage()
 {
@@ -17,10 +18,17 @@ int main(int argc, char *argv[])
         usage();
 
     std::string level_str = argv[1];
-    std::string bin_path = argv[2];
 
     if (level_str == "--level1")
-        my_strace(bin_path, argv);
+        my_strace(argv);
+
+    else if (level_str == "--level2")
+    {
+        if (argc < 4)
+            usage();
+
+        my_sscov(argv);
+    }
 
     else
         std::cout << "Not implemented yet, sorry." << std::endl;
