@@ -2,8 +2,12 @@
 #include <sys/ptrace.h> // ptrace()
 #include <sys/wait.h> // waitpid()
 #include <sys/user.h> // struct user_regs_struct
+
 #include <cstdlib> // std::exit()
+#include <cstring> // memset
+
 #include <iostream> // std::cerr
+#include <string>
 
 #include <unistd.h> // fork()
 
@@ -16,12 +20,12 @@ static void trace_child(pid_t pid_child)
     struct user_regs_struct user_regs;
     bool enter_syscall = true;
 
-    // our child tell us that he is starting execution
+    // our child tell us that he is starting execution (execve)
     wait(&status);
 
     const std::string syscall_name[] =
     {
-        SYSCALL_NAME()
+        SYSCALL_TABLE()
     };
 
     while (true)
@@ -50,28 +54,28 @@ static void trace_child(pid_t pid_child)
     }
 }
 
-void my_strace(const std::string& bin_path, char *argv[])
+void my_strace(char** argv)
 {
     pid_t pid_child = fork();
 
     if (pid_child == -1)
     {
-        std::cerr << "FORK ERROR" << std::endl;
+        std::cerr << "Error forking" << std::endl;
         std::exit(1);
     }
 
     else if (pid_child == 0)
     {
         ptrace(PTRACE_TRACEME);
-        pid_child = getpid();
 
-        char* const bin_argv[] =
-        {
-            const_cast<char*>(bin_path.c_str()),
-            NULL
-        };
+        char* bin_argv[32];
+        std::memset(bin_argv, 0, sizeof (char*) * 32);
+        bin_argv[0] = argv[2];
 
-        execvp(bin_path.c_str(), bin_argv);
+        for (int i = 3, j = 1; i < 31 && argv[i]; ++i, ++j)
+            bin_argv[j] = argv[i];
+
+        execvp(argv[2], bin_argv);
     }
 
     else
