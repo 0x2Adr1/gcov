@@ -12,8 +12,9 @@
 #include <iostream>
 
 #include "my_sscov.hh"
+#include "../elf.hh"
 
-Elf::Elf(const std::string& elf_path)
+Elf::Elf(const std::string& elf_path) : m_dwarf(nullptr)
 {
     struct stat buf;
 
@@ -27,21 +28,24 @@ Elf::Elf(const std::string& elf_path)
 
     m_elf_size = buf.st_size;
 
-    m_buf = static_cast<char*>(mmap(NULL, m_elf_size, PROT_READ, MAP_PRIVATE,
-                m_fd_elf_file, 0));
+    m_buf = static_cast<unsigned char*>(mmap(NULL, m_elf_size, PROT_READ,
+                MAP_PRIVATE, m_fd_elf_file, 0));
 
     m_ehdr = reinterpret_cast<Elf64_Ehdr*>(m_buf);
 
-    find_text_section();
+    m_text_shdr = find_section_by_name(".text");
 }
 
 Elf::~Elf()
 {
     munmap(m_buf, m_elf_size);
     close(m_fd_elf_file);
+
+    if (m_dwarf)
+        delete m_dwarf;
 }
 
-void Elf::find_text_section()
+Elf64_Shdr* Elf::find_section_by_name(const std::string& section_name)
 {
     Elf64_Shdr* shdr_string =
         reinterpret_cast<Elf64_Shdr*>
@@ -52,22 +56,18 @@ void Elf::find_text_section()
     {
         Elf64_Shdr* shdr = reinterpret_cast<Elf64_Shdr*>(&m_buf[index]);
 
-        if (!std::strcmp(&m_buf[shdr_string->sh_offset + shdr->sh_name],
-                    ".text"))
-        {
-            m_text_shdr = shdr;
-            break;
-        }
+        if (!std::strcmp((char*)(&m_buf[shdr_string->sh_offset + shdr->sh_name]),
+                    section_name.c_str()))
+            return shdr;
     }
 
-    /*std::cout << std::hex << m_text_shdr->sh_offset << std::endl;
-    std::cout << "0x" << m_text_shdr->sh_addr << std::endl;
-    std::cout << m_text_shdr->sh_size << std::endl;*/
+    return nullptr;
 }
 
-void Elf::sscov(unsigned long long rip, std::fstream& stream,
-        struct user_regs_struct& user_regs)
+void Elf::sscov(std::fstream& stream, const struct user_regs_struct& user_regs)
 {
+    unsigned long long rip = user_regs.rip;
+
     if (rip < m_text_shdr->sh_addr
             || rip > m_text_shdr->sh_addr + m_text_shdr->sh_size)
         return;

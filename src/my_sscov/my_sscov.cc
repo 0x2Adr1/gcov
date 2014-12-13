@@ -12,6 +12,7 @@
 #include <unistd.h> // fork()
 
 #include "my_sscov.hh"
+#include "../elf.hh"
 
 static void trace_child(pid_t pid_child, char** argv, std::fstream& file)
 {
@@ -33,7 +34,7 @@ static void trace_child(pid_t pid_child, char** argv, std::fstream& file)
 
         ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
 
-        elf.sscov(user_regs.rip, file, user_regs);
+        elf.sscov(file, user_regs);
     }
 }
 
