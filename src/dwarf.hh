@@ -2,6 +2,10 @@
 # define DWARF_HH
 
 # include <list>
+# include <fstream>
+# include <memory>
+# include <string>
+# include <unordered_map>
 # include <elf.h>
 
 # include <sys/user.h>
@@ -55,6 +59,8 @@ public:
     Dwarf(unsigned char* buf, Elf64_Shdr* debug_info, Elf64_Shdr* debug_str,
             Elf64_Shdr* debug_aranges, Elf64_Shdr* debug_line);
 
+    ~Dwarf();
+
     // cu = compilation unit
     void map_range_addr_to_cu();
 
@@ -69,6 +75,8 @@ private:
             unsigned long long rip);
     bool handle_standard_opcode(std::size_t& offset, struct debug_line_hdr*,
             unsigned long long rip);
+
+    void print_file_line(unsigned char* comp_dir, unsigned char* file_name);
 
     void reset_registers();
     bool get_line_number(unsigned long long rip,
@@ -95,6 +103,10 @@ private:
     unsigned int m_reg_epilogue_begin;
     unsigned int m_reg_isa;
     unsigned int m_reg_discriminator;
+
+    // map a file with an fstream object for fast retrieval in print_file_line()
+    std::unordered_map<std::string, std::shared_ptr<std::ifstream> >
+        m_map_ifstream;
 };
 
 #endif /* !DWARF_HH */

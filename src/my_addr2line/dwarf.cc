@@ -1,7 +1,10 @@
 #include "../dwarf.hh"
 
+#include <utility>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
+#include <string>
 #include <cstdlib>
 
 #include <assert.h>
@@ -25,6 +28,10 @@ Dwarf::Dwarf(unsigned char* buf, Elf64_Shdr* debug_info,
     assert(m_debug_str != nullptr);
 
     m_buf = buf;
+}
+
+Dwarf::~Dwarf()
+{
 }
 
 void Dwarf::map_range_addr_to_cu()
@@ -101,6 +108,18 @@ void Dwarf::get_debug_line_offset(struct range_addr& range_addr)
 
     range_addr.debug_line_offset = *reinterpret_cast<unsigned int*>
         (&m_buf[offset]);
+
+    unsigned char* comp_dir =
+        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_comp_dir_offset];
+    unsigned char* file_name =
+        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset];
+    std::string file_path(reinterpret_cast<char*>(comp_dir));
+    std::string file_name_string(reinterpret_cast<char*>(file_name));
+
+    file_path += "/" + file_name_string;
+
+    m_map_ifstream.insert({file_path,
+            std::make_shared<std::ifstream>(file_path)});
 }
 
 void Dwarf::handle_extended_opcode(std::size_t& offset)
@@ -169,17 +188,6 @@ bool Dwarf::handle_special_opcode(std::size_t& offset,
 
     if (rip > tmp_address && rip < m_reg_address)
         return true;
-#if 0
-    m_reg_address += debug_line_hdr->min_inst_length
-        * ((m_reg_op_index + operation_advance)
-        / debug_line_hdr->max_inst_length);
-
-    m_reg_op_index = (m_reg_op_index + operation_advance)
-        % debug_line_hdr->max_inst_length;
-
-    m_reg_line = debug_line_hdr->line_base
-        + (adjusted_opcode % debug_line_hdr->line_range);
-#endif
 
     op_advance = adjusted_opcode % debug_line_hdr->line_range;
     op_advance += debug_line_hdr->line_base;
@@ -335,13 +343,32 @@ bool Dwarf::get_line_number(unsigned long long rip,
     return false;
 }
 
+void Dwarf::print_file_line(unsigned char* comp_dir, unsigned char* file_name)
+{
+    std::string file_path(reinterpret_cast<char*>(comp_dir));
+    std::string file_name_string = reinterpret_cast<char*>(file_name);
+
+    file_path += "/" + file_name_string;
+
+    std::shared_ptr<std::ifstream> file_ptr = m_map_ifstream[file_path];
+    file_ptr->seekg(file_ptr->beg);
+
+    const int line_max_size = 4096;
+    char line[line_max_size];
+    unsigned int n_line = 0;
+
+    while (n_line < m_reg_line && file_ptr->getline(line, line_max_size))
+        ++n_line;
+
+    if (n_line == m_reg_line)
+        std::printf("%s\n", line);
+}
+
 void Dwarf::addr2line_print_instruction(unsigned long long rip,
         struct range_addr& range_addr)
 {
+    static unsigned int old_line_number = 0;
     reset_registers();
-
-    //std::printf("0x%x\n", range_addr.debug_line_offset);
-    std::cout << std::hex << "0x" << rip << ": ";
 
     if (!get_line_number(rip, range_addr.debug_line_offset))
     {
@@ -350,10 +377,24 @@ void Dwarf::addr2line_print_instruction(unsigned long long rip,
         std::exit(1);
     }
 
-    std::printf("%s/%s:%d\n",
-            &m_buf[m_debug_str->sh_offset + range_addr.debug_str_comp_dir_offset],
-            &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset],
-            m_reg_line);
+    // we have a line that is composed with more than one cpu instruction
+    if (m_reg_line == old_line_number)
+        return;
+
+    else
+        old_line_number = m_reg_line;
+
+    unsigned char* comp_dir =
+        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_comp_dir_offset];
+
+    unsigned char* file_name =
+        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset];
+
+    std::cout << std::hex << "0x" << rip << ": ";
+    std::printf("%s/%s:%.5d", comp_dir, file_name, m_reg_line);
+
+    std::cout << " | ";
+    print_file_line(comp_dir, file_name);
 }
 
 void Dwarf::addr2line(const struct user_regs_struct& user_regs)
