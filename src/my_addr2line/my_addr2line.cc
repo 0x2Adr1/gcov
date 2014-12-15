@@ -58,6 +58,7 @@ void my_addr2line(char** argv)
             bin_argv[j] = argv[i];
 
         execvp(argv[2], bin_argv);
+        std::cerr << "Error occured with execvp." << std::endl;
     }
 
     else
