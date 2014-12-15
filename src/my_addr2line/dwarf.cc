@@ -212,10 +212,6 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
             m_reg_address += op_advance;
             if (rip > tmp_address && rip < m_reg_address)
                 return true;
-#if PRINT_DEBUG
-            std::printf("DW_LNS_advance_pc, address is now 0x%llx\n",
-                    m_reg_address);
-#endif
             break;
 
         case DW_LNS_advance_line:
