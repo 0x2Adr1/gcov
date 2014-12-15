@@ -11,8 +11,6 @@
 
 #include <dwarf.h>
 
-//#define PRINT_DEBUG 1
-
 Dwarf::Dwarf(unsigned char* buf, Elf64_Shdr* debug_info,
         Elf64_Shdr* debug_str, Elf64_Shdr* debug_aranges,
         Elf64_Shdr* debug_line)
@@ -138,9 +136,6 @@ void Dwarf::handle_extended_opcode(std::size_t& offset)
     switch (extended_opcode)
     {
         case DW_LNE_end_sequence:
-#if PRINT_DEBUG
-            std::printf("extended opcode DW_LNE_end_sequence\n");
-#endif
             reset_registers();
             m_reg_end_sequence = 1;
             break;
@@ -149,10 +144,6 @@ void Dwarf::handle_extended_opcode(std::size_t& offset)
             m_reg_address = *reinterpret_cast<unsigned long long*>
                 (&m_buf[offset + 1]);
             m_reg_op_index = 0;
-
-#if PRINT_DEBUG
-            std::cout << "extended opcode: address set to " << m_reg_address << std::endl;
-#endif
             break;
 
         case DW_LNE_define_file:
@@ -194,11 +185,6 @@ bool Dwarf::handle_special_opcode(std::size_t& offset,
     m_reg_line += op_advance;
 
     ++offset;
-
-#if PRINT_DEBUG
-    std::printf("Special opcode, address is now 0x%llx ", m_reg_address);
-    std::printf("line is now %d\n", m_reg_line);
-#endif
 
     // we have the line corresponding to the address
     if (rip == m_reg_address)
@@ -299,31 +285,15 @@ bool Dwarf::get_line_number(unsigned long long rip,
 
     debug_line_hdr = reinterpret_cast<struct debug_line_hdr*> (&m_buf[offset]);
 
-#if PRINT_DEBUG
-    std::printf("opcode_base = %d\n", debug_line_hdr->opcode_base);
-    std::printf(".debug_line version = 0x%hx\n", debug_line_hdr->version);
-#endif
-
     m_reg_is_stmt = debug_line_hdr->default_is_stmt;
 
     offset = m_debug_line->sh_offset;
     offset += debug_line_offset + debug_line_hdr->prologue_length + 10;
 
-#if 0
-    for (; offset < m_debug_line->sh_offset + m_debug_line->sh_size; ++offset)
-        std::printf("0x%x\n", m_buf[offset]);
-
-    std::exit(1);
-#endif
-
     while (offset < m_debug_line->sh_offset + m_debug_line->sh_size
             && !m_reg_end_sequence)
     {
         unsigned char opcode = m_buf[offset];
-
-#if PRINT_DEBUG
-        std::printf("opcode to handle = 0x%x\n", opcode);
-#endif
 
         if (opcode == 0)
             handle_extended_opcode(offset);
