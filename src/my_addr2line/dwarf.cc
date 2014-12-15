@@ -6,6 +6,10 @@
 
 #include <assert.h>
 
+#include <dwarf.h>
+
+//#define PRINT_DEBUG 1
+
 Dwarf::Dwarf(unsigned char* buf, Elf64_Shdr* debug_info,
         Elf64_Shdr* debug_str, Elf64_Shdr* debug_aranges,
         Elf64_Shdr* debug_line)
@@ -35,8 +39,6 @@ void Dwarf::map_range_addr_to_cu()
         debug_aranges_hdr = reinterpret_cast<struct debug_aranges_hdr*>
             (&m_buf[i + m_debug_aranges->sh_offset]);
 
-        //std::cout << std::hex << debug_aranges_hdr->length << std::endl;
-
         i += sizeof (struct debug_aranges_hdr);
 
 #if 0
@@ -51,13 +53,9 @@ void Dwarf::map_range_addr_to_cu()
 
         i += debug_aranges_hdr->addr_size;
 
-        //std::cout << std::hex << *addr_begin << std::endl;
-
         // TODO: not sure if offset is always 4 bytes ...
         unsigned int* offset = reinterpret_cast<unsigned int*>
             (&m_buf[i + m_debug_aranges->sh_offset]);
-
-        //std::cout << std::hex << *offset << std::endl;
 
         i = i_tmp + debug_aranges_hdr->length;
         i += sizeof (debug_aranges_hdr->length);
@@ -91,8 +89,6 @@ void Dwarf::get_debug_line_offset(struct range_addr& range_addr)
     offset += 4; // we don't care about compiler name
     offset++; // we don't care about DW_AT_language
 
-    //printf("debug info length = 0x%x\n", debug_info_hdr->length);
-
     range_addr.debug_str_file_name_offset =
         *reinterpret_cast<unsigned int*>(&m_buf[offset]);
 
@@ -107,7 +103,187 @@ void Dwarf::get_debug_line_offset(struct range_addr& range_addr)
         (&m_buf[offset]);
 }
 
-unsigned int Dwarf::get_line_number(unsigned long long rip,
+void Dwarf::handle_extended_opcode(std::size_t& offset)
+{
+    ++offset;
+    std::size_t length = m_buf[offset++];
+
+    if (length == 0)
+    {
+        std::cerr << "Length for extended opcode is null." << std::endl;
+        std::exit(1);
+    }
+
+    unsigned char extended_opcode = m_buf[offset];
+
+    switch (extended_opcode)
+    {
+        case DW_LNE_end_sequence:
+#if PRINT_DEBUG
+            std::printf("extended opcode DW_LNE_end_sequence\n");
+#endif
+            reset_registers();
+            m_reg_end_sequence = 1;
+            break;
+
+        case DW_LNE_set_address:
+            m_reg_address = *reinterpret_cast<unsigned long long*>
+                (&m_buf[offset + 1]);
+            m_reg_op_index = 0;
+
+#if PRINT_DEBUG
+            std::cout << "extended opcode: address set to " << m_reg_address << std::endl;
+#endif
+            break;
+
+        case DW_LNE_define_file:
+            break;
+
+        case DW_LNE_set_discriminator:
+            break;
+
+        case DW_LNE_lo_user:
+            break;
+
+        case DW_LNE_hi_user:
+            break;
+
+        default:
+            std::printf("Uknown extended opcode 0x%x\n", extended_opcode);
+            std::exit(1);
+            break;
+    }
+
+    offset += length;
+}
+
+bool Dwarf::handle_special_opcode(std::size_t& offset,
+        struct debug_line_hdr* debug_line_hdr, unsigned long long rip)
+{
+    unsigned char adjusted_opcode = m_buf[offset] - debug_line_hdr->opcode_base;
+    int op_advance = adjusted_opcode / debug_line_hdr->line_range;
+
+    unsigned long long tmp_address = m_reg_address;
+
+    m_reg_address += op_advance;
+
+    if (rip > tmp_address && rip < m_reg_address)
+        return true;
+#if 0
+    m_reg_address += debug_line_hdr->min_inst_length
+        * ((m_reg_op_index + operation_advance)
+        / debug_line_hdr->max_inst_length);
+
+    m_reg_op_index = (m_reg_op_index + operation_advance)
+        % debug_line_hdr->max_inst_length;
+
+    m_reg_line = debug_line_hdr->line_base
+        + (adjusted_opcode % debug_line_hdr->line_range);
+#endif
+
+    op_advance = adjusted_opcode % debug_line_hdr->line_range;
+    op_advance += debug_line_hdr->line_base;
+    m_reg_line += op_advance;
+
+    ++offset;
+
+#if PRINT_DEBUG
+    std::printf("Special opcode, address is now 0x%llx ", m_reg_address);
+    std::printf("line is now %d\n", m_reg_line);
+#endif
+
+    // we have the line corresponding to the address
+    if (rip == m_reg_address)
+        return true;
+
+    return false;
+}
+
+bool Dwarf::handle_standard_opcode(std::size_t& offset,
+        struct debug_line_hdr* debug_line_hdr, unsigned long long rip)
+{
+    unsigned char opcode = m_buf[offset];
+    int op_advance = 0;
+    unsigned long long tmp_address = 0;
+
+    switch (opcode)
+    {
+        case DW_LNS_copy:
+            std::printf("DW_LNS_copy not implemented yet :(\n");
+            break;
+
+        case DW_LNS_advance_pc:
+            op_advance = debug_line_hdr->min_inst_length * m_buf[++offset];
+            tmp_address = m_reg_address;
+            m_reg_address += op_advance;
+            if (rip > tmp_address && rip < m_reg_address)
+                return true;
+#if PRINT_DEBUG
+            std::printf("DW_LNS_advance_pc, address is now 0x%llx\n",
+                    m_reg_address);
+#endif
+            break;
+
+        case DW_LNS_advance_line:
+            std::printf("DW_LNS_advance_line not implemented yet :(\n");
+            break;
+
+        case DW_LNS_set_file:
+            std::printf("DW_LNS_set_file not implemented yet :(\n");
+            break;
+
+        case DW_LNS_set_column:
+            std::printf("DW_LNS_set_column not implemented yet :(\n");
+            break;
+
+        case DW_LNS_negate_stmt:
+            std::printf("DW_LNS_set_negate_stmt not implemented yet :(\n");
+            break;
+
+        case DW_LNS_set_basic_block:
+            std::printf("DW_LNS_set_basic_block not implemented yet :(\n");
+            break;
+
+        case DW_LNS_const_add_pc:
+            tmp_address = m_reg_address;
+            // it's like we call handle_special_opcode with the opcode 0xFF
+            m_reg_address += ((255 - debug_line_hdr->opcode_base)
+                    / debug_line_hdr->line_range)
+                    * debug_line_hdr->min_inst_length;
+
+            if (rip > tmp_address && rip < m_reg_address)
+                return true;
+
+            break;
+
+        case DW_LNS_fixed_advance_pc:
+            std::printf("DW_LNS_fixed_advance_pc not implemented yet :(\n");
+            break;
+
+        case DW_LNS_set_prologue_end:
+            std::printf("DW_LNS_set_prologue_end not implemented yet :(\n");
+            break;
+
+        case DW_LNS_set_epilogue_begin:
+            std::printf("DW_LNS_set_epilogue_begin not implemented yet :(\n");
+            break;
+
+        case DW_LNS_set_isa:
+            std::printf("DW_LNS_set_isa not implemented yet :(\n");
+            break;
+
+        default:
+            std::printf("Unknown standard opcode: 0x%x\n", opcode);
+            std::exit(1);
+            break;
+    }
+
+    ++offset;
+
+    return false;
+}
+
+bool Dwarf::get_line_number(unsigned long long rip,
         unsigned int debug_line_offset)
 {
     struct debug_line_hdr* debug_line_hdr;
@@ -115,19 +291,48 @@ unsigned int Dwarf::get_line_number(unsigned long long rip,
 
     debug_line_hdr = reinterpret_cast<struct debug_line_hdr*> (&m_buf[offset]);
 
+#if PRINT_DEBUG
+    std::printf("opcode_base = %d\n", debug_line_hdr->opcode_base);
+    std::printf(".debug_line version = 0x%hx\n", debug_line_hdr->version);
+#endif
+
     m_reg_is_stmt = debug_line_hdr->default_is_stmt;
 
-    offset = m_debug_line->sh_offset + debug_line_hdr->prologue_length + 11;
+    offset = m_debug_line->sh_offset;
+    offset += debug_line_offset + debug_line_hdr->prologue_length + 10;
 
-    offset = m_debug_line->sh_offset + debug_line_offset;
-    for (; offset < m_debug_line->sh_size + m_debug_line->sh_offset; ++offset)
+#if 0
+    for (; offset < m_debug_line->sh_offset + m_debug_line->sh_size; ++offset)
         std::printf("0x%x\n", m_buf[offset]);
 
-    (void) rip;
+    std::exit(1);
+#endif
 
-    //std::exit(42);
+    while (offset < m_debug_line->sh_offset + m_debug_line->sh_size
+            && !m_reg_end_sequence)
+    {
+        unsigned char opcode = m_buf[offset];
 
-    return 42;
+#if PRINT_DEBUG
+        std::printf("opcode to handle = 0x%x\n", opcode);
+#endif
+
+        if (opcode == 0)
+            handle_extended_opcode(offset);
+
+        // we have a special opcode
+        else if (opcode > debug_line_hdr->opcode_base)
+        {
+            if (handle_special_opcode(offset, debug_line_hdr, rip))
+                return true;
+        }
+
+        else
+            if (handle_standard_opcode(offset, debug_line_hdr, rip))
+                return true;
+    }
+
+    return false;
 }
 
 void Dwarf::addr2line_print_instruction(unsigned long long rip,
@@ -135,12 +340,20 @@ void Dwarf::addr2line_print_instruction(unsigned long long rip,
 {
     reset_registers();
 
+    //std::printf("0x%x\n", range_addr.debug_line_offset);
     std::cout << std::hex << "0x" << rip << ": ";
+
+    if (!get_line_number(rip, range_addr.debug_line_offset))
+    {
+        std::cerr << "Can't find the line corresponding to this instruction.";
+        std::cerr << std::endl;
+        std::exit(1);
+    }
 
     std::printf("%s/%s:%d\n",
             &m_buf[m_debug_str->sh_offset + range_addr.debug_str_comp_dir_offset],
             &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset],
-            get_line_number(rip, range_addr.debug_line_offset));
+            m_reg_line);
 }
 
 void Dwarf::addr2line(const struct user_regs_struct& user_regs)

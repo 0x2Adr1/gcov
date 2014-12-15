@@ -29,6 +29,7 @@ struct debug_line_hdr
     unsigned short version;
     unsigned int prologue_length;
     unsigned char min_inst_length;
+    //unsigned char max_inst_length;
     unsigned char default_is_stmt;
     char line_base;
     unsigned char line_range;
@@ -63,8 +64,14 @@ public:
             struct range_addr&);
 
 private:
+    void handle_extended_opcode(std::size_t& offset);
+    bool handle_special_opcode(std::size_t& offset, struct debug_line_hdr*,
+            unsigned long long rip);
+    bool handle_standard_opcode(std::size_t& offset, struct debug_line_hdr*,
+            unsigned long long rip);
+
     void reset_registers();
-    unsigned int get_line_number(unsigned long long rip,
+    bool get_line_number(unsigned long long rip,
             unsigned int debug_line_offset);
 
     std::list<range_addr> m_list_range;
