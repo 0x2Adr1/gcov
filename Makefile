@@ -1,12 +1,15 @@
-CXX=g++
-CXXFLAGS=-Wall -Wextra -Werror -pedantic -std=c++14 -gdwarf-4
+CXX = clang++
+CXXFLAGS = -Wall -Wextra -Werror -pedantic -std=c++1y -O2
+LDFLAGS = -lcapstone
 
-OBJS=main.o my_strace/my_strace.o my_sscov/my_sscov.o my_sscov/elf.o \
-     my_addr2line/elf.o my_addr2line/my_addr2line.o my_addr2line/dwarf.o
-OBJS:=$(addprefix src/,$(OBJS))
+OBJS = main.o my_strace/my_strace.o my_sscov/my_sscov.o my_sscov/elf.o \
+       my_addr2line/elf.o my_addr2line/my_addr2line.o my_addr2line/dwarf.o \
+       my_gcov/my_gcov.o my_gcov/elf.o breakpoint.o
+
+OBJS := $(addprefix src/,$(OBJS))
 
 all: $(OBJS)
-	$(CXX) $^ -o my_gcov
+	$(CXX) $^ $(LDFLAGS) -o my_gcov
 
 clean:
 	rm -rf $(OBJS)
