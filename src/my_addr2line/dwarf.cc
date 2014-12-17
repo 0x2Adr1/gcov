@@ -13,17 +13,19 @@
 
 Dwarf::Dwarf(unsigned char* buf, Elf64_Shdr* debug_info,
         Elf64_Shdr* debug_str, Elf64_Shdr* debug_aranges,
-        Elf64_Shdr* debug_line)
+        Elf64_Shdr* debug_line, Elf64_Shdr* debug_abbrev)
 {
     m_debug_info = debug_info;
     m_debug_str = debug_str;
     m_debug_line = debug_line;
     m_debug_aranges = debug_aranges;
+    m_debug_abbrev = debug_abbrev;
 
     assert(m_debug_info != nullptr);
     assert(m_debug_line != nullptr);
     assert(m_debug_aranges != nullptr);
     assert(m_debug_str != nullptr);
+    assert(m_debug_abbrev != nullptr);
 
     m_buf = buf;
 }
@@ -80,6 +82,35 @@ void Dwarf::map_range_addr_to_cu()
     }
 }
 
+void Dwarf::insert_file_in_map(struct range_addr& range_addr)
+{
+    unsigned char* comp_dir =
+        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_comp_dir_offset];
+    unsigned char* file_name =
+        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset];
+
+    std::string file_path(reinterpret_cast<char*>(comp_dir));
+    std::string file_name_string(reinterpret_cast<char*>(file_name));
+
+    file_path += "/" + file_name_string;
+
+    m_map_ifstream.insert({file_path, std::make_shared<std::ifstream>
+            (file_path)});
+
+    std::ifstream& file_stream = *m_map_ifstream[file_path];
+
+    std::size_t n_line = 0;
+    std::string line;
+    while (std::getline(file_stream, line))
+        ++n_line;
+
+    file_stream.clear();
+    file_stream.seekg(file_stream.beg);
+
+    std::vector<int> vect(n_line + 1, 0);
+    m_gcov_vect.insert({file_path, std::move(vect)});
+}
+
 void Dwarf::get_debug_line_offset(struct range_addr& range_addr)
 {
     struct debug_info_hdr* debug_info_hdr;
@@ -91,33 +122,47 @@ void Dwarf::get_debug_line_offset(struct range_addr& range_addr)
 
     offset += sizeof (struct debug_info_hdr) + 1;
 
-    offset += 4; // we don't care about compiler name
-    offset++; // we don't care about DW_AT_language
+    std::size_t i = 3;
+    while (m_buf[i + m_debug_abbrev->sh_offset] != DW_AT_stmt_list)
+    {
+        switch (m_buf[i + m_debug_abbrev->sh_offset])
+        {
+            case DW_AT_producer:
+                offset += 4;
+                break;
 
-    range_addr.debug_str_file_name_offset =
-        *reinterpret_cast<unsigned int*>(&m_buf[offset]);
+            case DW_AT_comp_dir:
+                range_addr.debug_str_comp_dir_offset =
+                    *reinterpret_cast<std::uint32_t*>(&m_buf[offset]);
+                offset += 4;
+                break;
 
-    offset += 4;
+            case DW_AT_name:
+                range_addr.debug_str_file_name_offset =
+                    *reinterpret_cast<std::uint32_t*>(&m_buf[offset]);
+                offset += 4;
+                break;
 
-    range_addr.debug_str_comp_dir_offset = *reinterpret_cast<unsigned int*>
+            case DW_AT_low_pc:
+            case DW_AT_high_pc:
+                offset += debug_info_hdr->addr_size;
+                break;
+
+            case DW_AT_ranges:
+                offset += 4;
+                break;
+
+            case DW_AT_language:
+                offset++;
+        }
+
+        i += 2;
+    }
+
+    range_addr.debug_line_offset = *reinterpret_cast<std::uint32_t*>
         (&m_buf[offset]);
 
-    offset += 4 + 2 * debug_info_hdr->addr_size;
-
-    range_addr.debug_line_offset = *reinterpret_cast<unsigned int*>
-        (&m_buf[offset]);
-
-    unsigned char* comp_dir =
-        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_comp_dir_offset];
-    unsigned char* file_name =
-        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset];
-    std::string file_path(reinterpret_cast<char*>(comp_dir));
-    std::string file_name_string(reinterpret_cast<char*>(file_name));
-
-    file_path += "/" + file_name_string;
-
-    m_map_ifstream.insert({file_path,
-            std::make_shared<std::ifstream>(file_path)});
+    insert_file_in_map(range_addr);
 }
 
 void Dwarf::handle_extended_opcode(std::size_t& offset)
@@ -215,7 +260,8 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
             break;
 
         case DW_LNS_advance_line:
-            std::printf("DW_LNS_advance_line not implemented yet :(\n");
+            op_advance = m_buf[++offset];
+            m_reg_line += op_advance;
             break;
 
         case DW_LNS_set_file:
@@ -317,17 +363,19 @@ void Dwarf::print_file_line(unsigned char* comp_dir, unsigned char* file_name)
     file_path += "/" + file_name_string;
 
     std::shared_ptr<std::ifstream> file_ptr = m_map_ifstream[file_path];
+    file_ptr->clear();
     file_ptr->seekg(file_ptr->beg);
 
-    const int line_max_size = 4096;
-    char line[line_max_size];
-    unsigned int n_line = 0;
+    std::string line;
+    std::size_t n_line = 0;
 
-    while (n_line < m_reg_line && file_ptr->getline(line, line_max_size))
+    while (n_line < m_reg_line && std::getline(*file_ptr, line))
         ++n_line;
 
     if (n_line == m_reg_line)
-        std::printf("%s\n", line);
+        std::cout << line;
+
+    std::cout << std::endl;
 }
 
 void Dwarf::addr2line_print_instruction(unsigned long long rip,
@@ -339,6 +387,7 @@ void Dwarf::addr2line_print_instruction(unsigned long long rip,
     if (!get_line_number(rip, range_addr.debug_line_offset))
     {
         std::cerr << "Can't find the line corresponding to this instruction.";
+        std::cerr << std::endl << "(0x" << std::hex << rip << ")" << std::endl;
         std::cerr << std::endl;
         std::exit(1);
     }

@@ -14,7 +14,13 @@
 static void trace_child(pid_t pid_child, char** argv)
 {
     Elf elf(argv[2]);
-    elf.parse_dwarf();
+
+    if (!elf.is_debug_info_available())
+    {
+        std::cerr << "No dwarf information found in the binary." << std::endl
+            << "Please use option -gdwarf-4 when you compile" << std::endl;
+        std::exit(1);
+    }
 
     int status = 0;
     struct user_regs_struct user_regs;
