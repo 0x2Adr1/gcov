@@ -248,7 +248,7 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
     switch (opcode)
     {
         case DW_LNS_copy:
-            std::printf("DW_LNS_copy not implemented yet :(\n");
+            // std::printf("DW_LNS_copy not implemented yet :(\n");
             break;
 
         case DW_LNS_advance_pc:
@@ -265,7 +265,8 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
             break;
 
         case DW_LNS_set_file:
-            std::printf("DW_LNS_set_file not implemented yet :(\n");
+            op_advance = m_buf[++offset];
+            m_reg_file = op_advance;
             break;
 
         case DW_LNS_set_column:
@@ -332,8 +333,14 @@ bool Dwarf::get_line_number(unsigned long long rip,
     offset = m_debug_line->sh_offset;
     offset += debug_line_offset + debug_line_hdr->prologue_length + 10;
 
-    while (offset < m_debug_line->sh_offset + m_debug_line->sh_size
-            && !m_reg_end_sequence)
+    /*for (; offset < m_debug_line->sh_offset + m_debug_line->sh_size; ++offset)
+    {
+        std::printf("0x%x\n", m_buf[offset]);
+    }
+    std::exit(1);*/
+
+    while (offset < m_debug_line->sh_offset + m_debug_line->sh_size)
+            //&& !m_reg_end_sequence)
     {
         unsigned char opcode = m_buf[offset];
 
