@@ -12,29 +12,41 @@
 #include <cstdio>
 #include <string>
 #include <iostream>
-#include <unordered_map>
 
 #include <errno.h>
 #include <inttypes.h>
+#include <capstone/capstone.h>
+#include <assert.h>
+
+static void init_capstone(csh* handle)
+{
+    if (cs_open(CS_ARCH_X86, CS_MODE_64, handle) != CS_ERR_OK)
+    {
+        std::cerr << "problem with capstone" << std::endl;
+        std::exit(1);
+    }
+}
 
 static void trace_child(pid_t pid_child, char** argv)
 {
     Elf elf(argv[2]);
 
-    bool debug_info_available = elf.parse_dwarf();
     int status = 0;
     struct user_regs_struct user_regs;
+    csh handle;
 
-    Breakpoint bp(pid_child, &elf);
+    init_capstone(&handle);
+
+    Breakpoint bp(pid_child, &elf, &handle);
 
     wait(&status);
 
-    bp.put_breakpoints();
+    std::uint64_t main_addr = 0;
+    bp.put_breakpoints(main_addr);
 
-    bool is_call_to_ext_lib = false;
     bool flag = false;
-
-    int i = 0;
+    std::uint64_t begin_basic_block = main_addr;
+    std::uint64_t end_basic_block = 0;
 
     while (true)
     {
@@ -47,41 +59,46 @@ static void trace_child(pid_t pid_child, char** argv)
 
         if (!WIFSTOPPED(status))
         {
-            std::cerr << "problem: we have not break" << std::endl;
+            std::cerr << "problem: we have not break, it's weird" << std::endl;
             std::exit(1);
         }
 
         if (flag)
             bp.restore_breakpoint(user_regs.rip);
-        /*if (is_call_to_ext_lib)
-        {
-            bp.restore_breakpoint(user_regs.rip);
-            is_call_to_ext_lib = false;
-        }*/
 
         ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
         std::printf("BREAK ! rip = 0x%llx\n", user_regs.rip);
 
+        // we need to go one byte before to execute the original instruction
         user_regs.rip--;
+
+        if (begin_basic_block == 0)
+            begin_basic_block = user_regs.rip;
+
+        else
+        {
+            end_basic_block = user_regs.rip;
+            assert(end_basic_block >= begin_basic_block);
+        }
+
         ptrace(PTRACE_SETREGS, pid_child, 0, &user_regs);
 
         bp.restore_opcode(user_regs.rip);
 
-        /*if (!(is_call_to_ext_lib = bp.is_call_to_ext_lib(user_regs.rip)))
-        {
-            ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
-            bp.restore_breakpoint(user_regs.rip);
-        }*/
-
-        /*if (i == 4)
-            std::exit(1);
-        ++i;*/
         flag = true;
+
+        if (end_basic_block != 0)
+        {
+            elf.gcov(begin_basic_block, end_basic_block, &handle);
+            begin_basic_block = 0;
+            end_basic_block = 0;
+        }
     }
 
-    (void) is_call_to_ext_lib;
-    (void) debug_info_available;
-    (void) i;
+    if (elf.is_debug_info_available())
+        elf.print_result_gcov();
+
+    cs_close(&handle);
 }
 
 void my_gcov(char** argv)
