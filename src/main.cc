@@ -4,6 +4,7 @@
 #include "my_strace/my_strace.hh"
 #include "my_sscov/my_sscov.hh"
 #include "my_addr2line/my_addr2line.hh"
+#include "my_gcov/my_gcov.hh"
 
 static void usage()
 {
@@ -34,6 +35,9 @@ int main(int argc, char *argv[])
     else if (level_str == "--level3")
         my_addr2line(argv);
 
+    else if (level_str == "--level4")
+        my_gcov(argv);
+
     else
-        std::cout << "Not implemented yet, sorry." << std::endl;
+        std::cout << "levels available are 1, 2, 3 and 4" << std::endl;
 }
