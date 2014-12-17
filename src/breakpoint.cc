@@ -4,46 +4,57 @@
 #include <inttypes.h>
 #include <sys/ptrace.h>
 #include <cstdlib>
+#include <cstring>
 
-Breakpoint::Breakpoint(pid_t pid_child, Elf* elf)
+Breakpoint::Breakpoint(pid_t pid_child, Elf* elf, csh* handle)
 {
     m_elf = elf;
     m_pid_child = pid_child;
-
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &m_handle) != CS_ERR_OK)
-    {
-        std::cerr << "problem with capstone" << std::endl;
-        std::exit(1);
-    }
+    m_handle = handle;
 }
 
 Breakpoint::~Breakpoint()
 {
-    cs_close(&m_handle);
 }
 
-void Breakpoint::put_breakpoints()
+void Breakpoint::put_breakpoints(std::uint64_t& main_addr)
 {
     std::size_t count;
 
     struct section_text section_text;
     m_elf->get_section_text(section_text);
 
-    count = cs_disasm(m_handle, section_text.buf, section_text.size,
+    count = cs_disasm(*m_handle, section_text.buf, section_text.size,
             section_text.vaddr, 0, &m_insn);
+
+    bool flag = false;
+    bool main_reached = false;
 
     if (count > 0)
     {
         for (std::size_t i = 0; i < count; ++i)
         {
-            std::printf("0x%" PRIx64":\t%s\t\t%s\n", m_insn[i].address,
-              m_insn[i].mnemonic, m_insn[i].op_str);
+            /*std::printf("0x%" PRIx64":\t%s\t\t%s\n", m_insn[i].address,
+              m_insn[i].mnemonic, m_insn[i].op_str);*/
+
+            if (flag && m_insn[i].address == main_addr)
+                main_reached = true;
+
+            if (main_addr != 0 && !main_reached)
+                continue;
 
             int code = 0;
             if ((code = is_ret_call_jmp(m_insn[i].mnemonic)))
             {
                 if (code == IS_CALL)
                 {
+                    if (!flag)
+                    {
+                        main_addr = std::strtol(&m_insn[i - 1].op_str[5], NULL, 16);
+                        flag = true;
+                        continue;
+                    }
+
                     std::uint64_t addr = std::strtol(m_insn[i].op_str, NULL, 16);
                     if (addr != 0 && !m_elf->is_in_section_text(addr))
                     {
@@ -80,7 +91,7 @@ void Breakpoint::put_0xcc(std::size_t i, bool call_ext_lib)
             reinterpret_cast<void*>(m_insn[i].address),
             reinterpret_cast<void*>(data));
 
-    //std::printf("breakpoint put at 0x%lx : %d\n", m_insn[i].address, call_ext_lib);
+    std::printf("breakpoint put at 0x%lx : %d\n", m_insn[i].address, call_ext_lib);
 
     word = ptrace(PTRACE_PEEKDATA, m_pid_child,
             reinterpret_cast<void*>(m_insn[i].address), 0);
@@ -106,9 +117,15 @@ int Breakpoint::is_ret_call_jmp(char* mnemonic)
 
 void Breakpoint::restore_opcode(std::uint64_t vaddr)
 {
+    std::uint64_t data = ptrace(PTRACE_PEEKDATA, m_pid_child,
+            reinterpret_cast<void*>(vaddr));
+
+    data &= 0xFFFFFFFFFFFFFF00;
+    data |= (m_opcode_backup[vaddr].first & 0x00000000000000FF);
+
     ptrace(PTRACE_POKEDATA, m_pid_child,
             reinterpret_cast<void*>(vaddr),
-            reinterpret_cast<void*>(m_opcode_backup[vaddr].first));
+            reinterpret_cast<void*>(data));
 
     /*std::printf("word 0x%lx restore at 0x%lx\n", m_opcode_backup[vaddr].first,
             vaddr);*/

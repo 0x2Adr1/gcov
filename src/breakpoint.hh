@@ -19,10 +19,10 @@ enum
 class Breakpoint
 {
 public:
-    Breakpoint(pid_t, Elf*);
+    Breakpoint(pid_t, Elf*, csh* handle);
     ~Breakpoint();
 
-    void put_breakpoints();
+    void put_breakpoints(std::uint64_t& main_addr);
     void restore_breakpoint(std::uint64_t vaddr);
     void restore_opcode(std::uint64_t vaddr);
     bool is_call_to_ext_lib(std::uint64_t vaddr);
@@ -37,7 +37,7 @@ private:
     std::unordered_map<std::uint64_t, std::pair<std::uint64_t, bool> >
         m_opcode_backup;
 
-    csh m_handle;
+    csh* m_handle;
     cs_insn* m_insn;
     pid_t m_pid_child;
     Elf* m_elf;
