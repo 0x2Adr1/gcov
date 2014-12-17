@@ -6,6 +6,14 @@
 # include <string>
 # include <elf.h>
 # include "dwarf.hh"
+# include <capstone/capstone.h>
+
+struct section_text
+{
+    unsigned char* buf;
+    std::size_t size;
+    unsigned long long vaddr;
+};
 
 class Elf
 {
@@ -19,6 +27,16 @@ public:
 
     void parse_dwarf();
     void addr2line(const struct user_regs_struct& user_regs);
+    void gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
+            csh* handle);
+
+    void get_section_text(struct section_text& section_text) const;
+    bool is_in_section_text(std::uint64_t vaddr) const;
+    bool is_debug_info_available() const;
+
+    void print_result_gcov();
+
+    std::uint64_t get_entry_point();
 
 private:
     Elf64_Ehdr* m_ehdr;
@@ -26,6 +44,7 @@ private:
     unsigned char* m_buf;
     int m_fd_elf_file;
     std::size_t m_elf_size;
+    bool m_debug_info_available;
 
     Dwarf* m_dwarf;
 };

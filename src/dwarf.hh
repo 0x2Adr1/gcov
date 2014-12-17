@@ -4,6 +4,7 @@
 # include <list>
 # include <fstream>
 # include <memory>
+# include <vector>
 # include <string>
 # include <unordered_map>
 # include <elf.h>
@@ -12,9 +13,9 @@
 
 struct debug_info_hdr
 {
-    unsigned int length;
-    unsigned short version;
-    unsigned int abbr_offset;
+    std::uint32_t length;
+    std::uint16_t version;
+    std::uint32_t abbrev_offset;
     unsigned char addr_size;
 } __attribute__ ((__packed__));
 
@@ -57,7 +58,8 @@ class Dwarf
 public:
     // buf contains the elf file
     Dwarf(unsigned char* buf, Elf64_Shdr* debug_info, Elf64_Shdr* debug_str,
-            Elf64_Shdr* debug_aranges, Elf64_Shdr* debug_line);
+            Elf64_Shdr* debug_aranges, Elf64_Shdr* debug_line,
+            Elf64_Shdr* debug_abbrev);
 
     ~Dwarf();
 
@@ -68,6 +70,10 @@ public:
     void addr2line(const struct user_regs_struct& user_regs);
     void addr2line_print_instruction(unsigned long long rip,
             struct range_addr&);
+
+    void gcov(std::uint64_t vaddr);
+    void gcov_incr_line_count(std::uint64_t rip, struct range_addr&);
+    void print_result_gcov();
 
 private:
     void handle_extended_opcode(std::size_t& offset);
@@ -82,6 +88,8 @@ private:
     bool get_line_number(unsigned long long rip,
             unsigned int debug_line_offset);
 
+    void insert_file_in_map(struct range_addr& range_addr);
+
     std::list<range_addr> m_list_range;
 
     unsigned char* m_buf;
@@ -90,6 +98,7 @@ private:
     Elf64_Shdr* m_debug_str;
     Elf64_Shdr* m_debug_aranges;
     Elf64_Shdr* m_debug_line;
+    Elf64_Shdr* m_debug_abbrev;
 
     unsigned long long m_reg_address;
     unsigned int m_reg_op_index;
@@ -107,6 +116,8 @@ private:
     // map a file with an fstream object for fast retrieval in print_file_line()
     std::unordered_map<std::string, std::shared_ptr<std::ifstream> >
         m_map_ifstream;
+
+    std::unordered_map<std::string, std::vector<int> > m_gcov_vect;
 };
 
 #endif /* !DWARF_HH */
