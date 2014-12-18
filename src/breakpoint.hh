@@ -22,10 +22,12 @@ public:
     Breakpoint(pid_t, Elf*, csh* handle);
     ~Breakpoint();
 
-    void put_breakpoints(std::uint64_t& main_addr);
+    void put_breakpoints();
     void restore_breakpoint(std::uint64_t vaddr);
     void restore_opcode(std::uint64_t vaddr);
     bool is_call_to_ext_lib(std::uint64_t vaddr);
+
+    void mprotect_section_text(int prot);
 
 private:
     void put_0xcc(std::size_t i, bool call_ext_lib = false);

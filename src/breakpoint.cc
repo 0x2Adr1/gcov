@@ -3,6 +3,8 @@
 #include <iostream>
 #include <inttypes.h>
 #include <sys/ptrace.h>
+#include <sys/wait.h>
+#include <sys/user.h>
 #include <cstdlib>
 #include <cstring>
 
@@ -17,7 +19,54 @@ Breakpoint::~Breakpoint()
 {
 }
 
-void Breakpoint::put_breakpoints(std::uint64_t& main_addr)
+void Breakpoint::mprotect_section_text(int prot)
+{
+    // syscall and 0xCC
+    std::uint64_t code = 0x00;
+    struct user_regs_struct user_regs;
+    struct user_regs_struct orig_regs;
+    int status;
+
+    ptrace(PTRACE_GETREGS, m_pid_child, 0, &user_regs);
+
+    orig_regs = user_regs;
+
+    std::cout << std::endl;
+    std::cout << "mprotect addr = 0x" << std::hex << user_regs.rip << std::endl;
+
+    struct section_text section_text;
+    m_elf->get_section_text(section_text);
+
+    std::uint64_t orig_code = ptrace(PTRACE_PEEKDATA, m_pid_child,
+            reinterpret_cast<void*>(user_regs.rip), 0);
+
+    user_regs.rax = 10;
+    user_regs.orig_rax = 10;
+    user_regs.rdi = section_text.vaddr;
+    user_regs.rsi = section_text.size;
+    user_regs.rdx = prot;
+
+    ptrace(PTRACE_POKEDATA, m_pid_child,
+            reinterpret_cast<void*>(user_regs.rip),
+            reinterpret_cast<void*>(code));
+
+    ptrace(PTRACE_SETREGS, m_pid_child, 0, &user_regs);
+    ptrace(PTRACE_CONT, m_pid_child, 0, 0);
+    wait(&status);
+
+    ptrace(PTRACE_GETREGS, m_pid_child, &user_regs);
+    std::printf("orig rax = 0x%llx\n", user_regs.orig_rax);
+    std::printf("rax = 0x%llx\n", user_regs.rax);
+
+    ptrace(PTRACE_SETREGS, m_pid_child, 0, &orig_regs);
+    ptrace(PTRACE_POKEDATA, m_pid_child,
+            reinterpret_cast<void*>(orig_regs.rip),
+            reinterpret_cast<void*>(orig_code));
+
+    std::cout << std::endl;
+}
+
+void Breakpoint::put_breakpoints()
 {
     std::size_t count;
 
@@ -27,9 +76,6 @@ void Breakpoint::put_breakpoints(std::uint64_t& main_addr)
     count = cs_disasm(*m_handle, section_text.buf, section_text.size,
             section_text.vaddr, 0, &m_insn);
 
-    bool flag = false;
-    bool main_reached = false;
-
     if (count > 0)
     {
         for (std::size_t i = 0; i < count; ++i)
@@ -37,30 +83,15 @@ void Breakpoint::put_breakpoints(std::uint64_t& main_addr)
             /*std::printf("0x%" PRIx64":\t%s\t\t%s\n", m_insn[i].address,
               m_insn[i].mnemonic, m_insn[i].op_str);*/
 
-            if (flag && m_insn[i].address == main_addr)
-                main_reached = true;
-
-            if (main_addr != 0 && !main_reached)
-                continue;
-
             int code = 0;
             if ((code = is_ret_call_jmp(m_insn[i].mnemonic)))
             {
                 if (code == IS_CALL)
                 {
-                    if (!flag)
-                    {
-                        main_addr = std::strtol(&m_insn[i - 1].op_str[5], NULL, 16);
-                        flag = true;
-                        continue;
-                    }
-
                     std::uint64_t addr = std::strtol(m_insn[i].op_str, NULL, 16);
                     if (addr != 0 && !m_elf->is_in_section_text(addr))
                     {
-                        //std::printf("on va jump dans une lib externe :(\n");
                         put_0xcc(i, true);
-                        put_0xcc(++i);
                         continue;
                     }
                 }
