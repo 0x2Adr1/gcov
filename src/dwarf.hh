@@ -30,9 +30,9 @@ struct debug_aranges_hdr
 
 struct debug_line_hdr
 {
-    unsigned int length;
-    unsigned short version;
-    unsigned int prologue_length;
+    std::uint32_t length;
+    std::uint16_t version;
+    std::uint32_t prologue_length;
     unsigned char min_inst_length;
     //unsigned char max_inst_length;
     unsigned char default_is_stmt;
@@ -74,6 +74,9 @@ public:
     void gcov(std::uint64_t vaddr);
     void gcov_incr_line_count(std::uint64_t rip, struct range_addr&);
     void print_result_gcov();
+
+    std::uint64_t get_leb128(std::size_t& offset, bool sign,
+            bool modify_offset = true);
 
 private:
     void handle_extended_opcode(std::size_t& offset);
