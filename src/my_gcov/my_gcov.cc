@@ -4,7 +4,9 @@
 #include <sys/user.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
 
+#include <signal.h>
 #include <unistd.h>
 
 #include <cstdint>
@@ -15,8 +17,10 @@
 
 #include <errno.h>
 #include <inttypes.h>
-#include <capstone/capstone.h>
+#include <stddef.h>
 #include <assert.h>
+
+#include <capstone/capstone.h>
 
 static void init_capstone(csh* handle)
 {
@@ -41,11 +45,9 @@ static void trace_child(pid_t pid_child, char** argv)
 
     wait(&status);
 
-    std::uint64_t main_addr = 0;
-    bp.put_breakpoints(main_addr);
+    bp.put_breakpoints();
 
-    bool flag = false;
-    std::uint64_t begin_basic_block = main_addr;
+    std::uint64_t begin_basic_block = elf.get_entry_point();
     std::uint64_t end_basic_block = 0;
 
     while (true)
@@ -54,7 +56,7 @@ static void trace_child(pid_t pid_child, char** argv)
 
         wait(&status);
 
-        if (WIFEXITED(status))
+        if (WIFEXITED(status) || WIFSIGNALED(status))
             break;
 
         if (!WIFSTOPPED(status))
@@ -63,36 +65,35 @@ static void trace_child(pid_t pid_child, char** argv)
             std::exit(1);
         }
 
-        if (flag)
-            bp.restore_breakpoint(user_regs.rip);
-
         ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
         std::printf("BREAK ! rip = 0x%llx\n", user_regs.rip);
 
+        if (WSTOPSIG(status) == SIGSEGV)
+        {
+            std::cout << "GOT SIGNAL ! " << std::dec << WTERMSIG(status) << std::endl;
+            std::cout << std::dec << WSTOPSIG(status) << std::endl;
+            break;
+        }
+
         // we need to go one byte before to execute the original instruction
         user_regs.rip--;
-
-        if (begin_basic_block == 0)
-            begin_basic_block = user_regs.rip;
-
-        else
-        {
-            end_basic_block = user_regs.rip;
-            assert(end_basic_block >= begin_basic_block);
-        }
-
+        bp.restore_opcode(user_regs.rip);
         ptrace(PTRACE_SETREGS, pid_child, 0, &user_regs);
 
-        bp.restore_opcode(user_regs.rip);
+        end_basic_block = user_regs.rip;
+        ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
+        wait(&status);
 
-        flag = true;
-
-        if (end_basic_block != 0)
+        if (bp.is_call_to_ext_lib(user_regs.rip))
         {
-            elf.gcov(begin_basic_block, end_basic_block, &handle);
-            begin_basic_block = 0;
-            end_basic_block = 0;
+            std::cout << "we call ext lib" << std::endl;
+            bp.mprotect_section_text(PROT_NONE);
         }
+
+        //elf.gcov(begin_basic_block, end_basic_block, &handle);
+
+        (void) begin_basic_block;
+        (void) end_basic_block;
     }
 
     if (elf.is_debug_info_available())

@@ -24,6 +24,9 @@ void Elf::gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
     std::size_t offset = m_text_shdr->sh_offset;
     offset += begin_basic_block - m_text_shdr->sh_addr;
 
+    /*if (begin_basic_block > end_basic_block)
+        std::swap(begin_basic_block, end_basic_block);*/
+
     cs_insn* insn;
     count = cs_disasm(*handle, &m_buf[offset],
             end_basic_block - begin_basic_block, begin_basic_block, 0, &insn);
