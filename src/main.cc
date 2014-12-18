@@ -11,7 +11,7 @@ static void usage()
     std::cout << "Usage: ./my_gcov --level{1|2|3|4} /path/to/binary [args]";
     std::cout << std::endl;
 
-    std::exit(0);
+    std::exit(EXIT_FAILURE);
 }
 
 int main(int argc, char *argv[])
@@ -40,4 +40,6 @@ int main(int argc, char *argv[])
 
     else
         std::cout << "levels available are 1, 2, 3 and 4" << std::endl;
+
+    return EXIT_SUCCESS;
 }
