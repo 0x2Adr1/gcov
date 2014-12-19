@@ -378,7 +378,7 @@ bool Dwarf::get_line_number(unsigned long long rip,
             handle_extended_opcode(offset);
 
         // we have a special opcode
-        else if (opcode > debug_line_hdr->opcode_base)
+        else if (opcode >= debug_line_hdr->opcode_base)
         {
             if (handle_special_opcode(offset, debug_line_hdr, rip))
                 return true;

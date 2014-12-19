@@ -53,17 +53,18 @@ static void trace_child(pid_t pid_child, char** argv)
 
     std::uint64_t begin_basic_block = elf.get_entry_point();
     std::uint64_t end_basic_block = 0;
+    std::uint64_t tmp_rip = 0;
 
     bp.set_last_writable_addr(elf.get_entry_point());
 
     bool child_is_in_ext_lib = false;
     bool flag = false;
     bool set_begin_basic_block = false;
+    bool restore_breakpoint = false;
 
     while (true)
     {
         ptrace(PTRACE_CONT, pid_child, 0, 0);
-
         wait(&status);
 
         if (!flag)
@@ -108,8 +109,11 @@ static void trace_child(pid_t pid_child, char** argv)
                 ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
                 bp.set_last_writable_addr(user_regs.rip);
 
-                begin_basic_block = user_regs.rip;
-                set_begin_basic_block = false;
+                if (elf.is_in_section_text(user_regs.rip))
+                {
+                    begin_basic_block = user_regs.rip;
+                    set_begin_basic_block = false;
+                }
 
                 bp.mprotect_ext_lib(PROT_READ | PROT_WRITE);
             }
@@ -118,8 +122,18 @@ static void trace_child(pid_t pid_child, char** argv)
             continue;
         }
 
-        if (!bp.restore_opcode(user_regs.rip - 1))
-            continue;
+        /*if (!bp.restore_opcode(user_regs.rip - 1))
+            continue;*/
+
+        if (restore_breakpoint)
+        {
+            bp.restore_breakpoint(tmp_rip);
+            restore_breakpoint = false;
+        }
+
+        bp.restore_opcode(user_regs.rip - 1);
+        restore_breakpoint = true;
+        tmp_rip = user_regs.rip - 1;
 
         // we need to go one byte before to execute the original instruction
         user_regs.rip--;
@@ -131,8 +145,9 @@ static void trace_child(pid_t pid_child, char** argv)
         {
             end_basic_block = user_regs.rip;
             elf.gcov(begin_basic_block, end_basic_block, &handle);
-            /*std::cout << "begin = 0x" << std::hex << begin_basic_block << std::endl;
-            std::cout << "end = 0x" << std::hex << end_basic_block << std::endl;*/
+            /*std::cout << "begin\t=\t0x" << std::hex << begin_basic_block << std::endl;
+            std::cout << "end\t=\t0x" << std::hex << end_basic_block << std::endl;
+            std::cout << std::endl;*/
         }
 
         set_begin_basic_block = !set_begin_basic_block;
@@ -148,7 +163,7 @@ static void trace_child(pid_t pid_child, char** argv)
             ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
 
             while (!elf.is_in_section_text(user_regs.rip)
-                    && WSTOPSIG(status) != SIGSEGV)
+                    && (WSTOPSIG(status) != SIGSEGV))
             {
                 ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
                 wait(&status);
