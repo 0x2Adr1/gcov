@@ -67,6 +67,12 @@ static void trace_child(pid_t pid_child, char** argv)
         ptrace(PTRACE_CONT, pid_child, 0, 0);
         wait(&status);
 
+        if (restore_breakpoint)
+        {
+            bp.restore_breakpoint(tmp_rip);
+            restore_breakpoint = false;
+        }
+
         if (!flag)
         {
             bp.mprotect_ext_lib(PROT_READ | PROT_WRITE);
@@ -84,10 +90,10 @@ static void trace_child(pid_t pid_child, char** argv)
 
         ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
         /*std::printf("BREAK ! rip = 0x%llx\n", user_regs.rip);
-        std::cout << "WSTOPSIG = " << WSTOPSIG(status) << std::endl;
-        std::printf("instr = 0x%lx\n", ptrace(PTRACE_PEEKDATA, pid_child,
-                    reinterpret_cast<void*>(user_regs.rip), 0));
-        std::cout << std::endl;*/
+          std::cout << "WSTOPSIG = " << WSTOPSIG(status) << std::endl;
+          std::printf("instr = 0x%lx\n", ptrace(PTRACE_PEEKDATA, pid_child,
+          reinterpret_cast<void*>(user_regs.rip), 0));
+          std::cout << std::endl;*/
 
         if (WSTOPSIG(status) == SIGSEGV)
         {
@@ -123,13 +129,7 @@ static void trace_child(pid_t pid_child, char** argv)
         }
 
         /*if (!bp.restore_opcode(user_regs.rip - 1))
-            continue;*/
-
-        if (restore_breakpoint)
-        {
-            bp.restore_breakpoint(tmp_rip);
-            restore_breakpoint = false;
-        }
+          continue;*/
 
         bp.restore_opcode(user_regs.rip - 1);
         restore_breakpoint = true;
@@ -146,8 +146,8 @@ static void trace_child(pid_t pid_child, char** argv)
             end_basic_block = user_regs.rip;
             elf.gcov(begin_basic_block, end_basic_block, &handle);
             /*std::cout << "begin\t=\t0x" << std::hex << begin_basic_block << std::endl;
-            std::cout << "end\t=\t0x" << std::hex << end_basic_block << std::endl;
-            std::cout << std::endl;*/
+              std::cout << "end\t=\t0x" << std::hex << end_basic_block << std::endl;
+              std::cout << std::endl;*/
         }
 
         set_begin_basic_block = !set_begin_basic_block;
@@ -174,6 +174,8 @@ static void trace_child(pid_t pid_child, char** argv)
             {
                 begin_basic_block = user_regs.rip;
                 set_begin_basic_block = false;
+                bp.restore_breakpoint(tmp_rip);
+                restore_breakpoint = false;
             }
         }
     }
