@@ -45,16 +45,32 @@ static void trace_child(pid_t pid_child, char** argv)
 
     wait(&status);
 
+    if (WIFEXITED(status))
+        return;
+
+    bp.parse_proc_pid_maps(pid_child);
     bp.put_breakpoints();
 
     std::uint64_t begin_basic_block = elf.get_entry_point();
     std::uint64_t end_basic_block = 0;
+
+    bp.set_last_writable_addr(elf.get_entry_point());
+
+    bool child_is_in_ext_lib = false;
+    bool flag = false;
+    bool set_begin_basic_block = false;
 
     while (true)
     {
         ptrace(PTRACE_CONT, pid_child, 0, 0);
 
         wait(&status);
+
+        if (!flag)
+        {
+            bp.mprotect_ext_lib(PROT_READ | PROT_WRITE);
+            flag = true;
+        }
 
         if (WIFEXITED(status) || WIFSIGNALED(status))
             break;
@@ -66,34 +82,85 @@ static void trace_child(pid_t pid_child, char** argv)
         }
 
         ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
-        std::printf("BREAK ! rip = 0x%llx\n", user_regs.rip);
+        /*std::printf("BREAK ! rip = 0x%llx\n", user_regs.rip);
+        std::cout << "WSTOPSIG = " << WSTOPSIG(status) << std::endl;
+        std::printf("instr = 0x%lx\n", ptrace(PTRACE_PEEKDATA, pid_child,
+                    reinterpret_cast<void*>(user_regs.rip), 0));
+        std::cout << std::endl;*/
 
         if (WSTOPSIG(status) == SIGSEGV)
         {
-            std::cout << "GOT SIGNAL ! " << std::dec << WTERMSIG(status) << std::endl;
-            std::cout << std::dec << WSTOPSIG(status) << std::endl;
-            break;
+            //std::cout << "SEGV ! " << child_is_in_ext_lib << std::endl;
+            if (!child_is_in_ext_lib)
+            {
+                bp.mprotect_ext_lib(PROT_READ | PROT_WRITE | PROT_EXEC);
+                ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
+                wait(&status);
+                ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
+                bp.set_last_writable_addr(user_regs.rip);
+                bp.mprotect_section_text(PROT_READ | PROT_WRITE);
+            }
+
+            else
+            {
+                bp.mprotect_section_text(PROT_READ | PROT_WRITE | PROT_EXEC);
+
+                ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
+                bp.set_last_writable_addr(user_regs.rip);
+
+                begin_basic_block = user_regs.rip;
+                set_begin_basic_block = false;
+
+                bp.mprotect_ext_lib(PROT_READ | PROT_WRITE);
+            }
+
+            child_is_in_ext_lib = !child_is_in_ext_lib;
+            continue;
         }
+
+        if (!bp.restore_opcode(user_regs.rip - 1))
+            continue;
 
         // we need to go one byte before to execute the original instruction
         user_regs.rip--;
-        bp.restore_opcode(user_regs.rip);
-        ptrace(PTRACE_SETREGS, pid_child, 0, &user_regs);
 
-        end_basic_block = user_regs.rip;
-        ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
-        wait(&status);
+        if (set_begin_basic_block)
+            begin_basic_block = user_regs.rip;
 
-        if (bp.is_call_to_ext_lib(user_regs.rip))
+        else
         {
-            std::cout << "we call ext lib" << std::endl;
-            bp.mprotect_section_text(PROT_NONE);
+            end_basic_block = user_regs.rip;
+            elf.gcov(begin_basic_block, end_basic_block, &handle);
+            /*std::cout << "begin = 0x" << std::hex << begin_basic_block << std::endl;
+            std::cout << "end = 0x" << std::hex << end_basic_block << std::endl;*/
         }
 
-        //elf.gcov(begin_basic_block, end_basic_block, &handle);
+        set_begin_basic_block = !set_begin_basic_block;
 
-        (void) begin_basic_block;
-        (void) end_basic_block;
+        ptrace(PTRACE_SETREGS, pid_child, 0, &user_regs);
+
+        bp.set_last_writable_addr(user_regs.rip);
+
+        if (set_begin_basic_block)
+        {
+            ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
+            wait(&status);
+            ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
+
+            while (!elf.is_in_section_text(user_regs.rip)
+                    && WSTOPSIG(status) != SIGSEGV)
+            {
+                ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
+                wait(&status);
+                ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
+            }
+
+            if (WSTOPSIG(status) != SIGSEGV)
+            {
+                begin_basic_block = user_regs.rip;
+                set_begin_basic_block = false;
+            }
+        }
     }
 
     if (elf.is_debug_info_available())

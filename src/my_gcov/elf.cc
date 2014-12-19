@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <inttypes.h>
+#include <assert.h>
 
 void Elf::get_section_text(struct section_text& section_text) const
 {
@@ -20,12 +21,17 @@ bool Elf::is_in_section_text(std::uint64_t vaddr) const
 void Elf::gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
         csh* handle)
 {
+    if (begin_basic_block == end_basic_block)
+        return;
+
     std::size_t count = 0;
     std::size_t offset = m_text_shdr->sh_offset;
     offset += begin_basic_block - m_text_shdr->sh_addr;
 
     /*if (begin_basic_block > end_basic_block)
         std::swap(begin_basic_block, end_basic_block);*/
+
+    assert(end_basic_block >= begin_basic_block);
 
     cs_insn* insn;
     count = cs_disasm(*handle, &m_buf[offset],

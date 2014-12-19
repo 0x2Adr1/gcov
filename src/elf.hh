@@ -34,12 +34,15 @@ public:
     bool is_in_section_text(std::uint64_t vaddr) const;
     bool is_debug_info_available() const;
 
+    bool is_in_plt(std::uint64_t rip);
+
     void print_result_gcov();
 
     std::uint64_t get_entry_point();
 
 private:
     Elf64_Ehdr* m_ehdr;
+    Elf64_Shdr* m_plt_shdr;
     Elf64_Shdr* m_text_shdr;
     unsigned char* m_buf;
     int m_fd_elf_file;
