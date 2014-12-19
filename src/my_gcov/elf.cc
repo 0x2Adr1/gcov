@@ -21,7 +21,7 @@ bool Elf::is_in_section_text(std::uint64_t vaddr) const
 void Elf::gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
         csh* handle)
 {
-    if (begin_basic_block == end_basic_block)
+    if (m_debug_info_available && (begin_basic_block == end_basic_block))
     {
         m_dwarf->gcov(begin_basic_block);
         return;
@@ -31,9 +31,9 @@ void Elf::gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
     std::size_t offset = m_text_shdr->sh_offset;
     offset += begin_basic_block - m_text_shdr->sh_addr;
 
-    std::cout << "begin\t=\t0x" << std::hex << begin_basic_block << std::endl;
+    /*std::cout << "begin\t=\t0x" << std::hex << begin_basic_block << std::endl;
     std::cout << "end\t=\t0x" << std::hex << end_basic_block << std::endl;
-    std::cout << std::endl;
+    std::cout << std::endl;*/
 
     assert(end_basic_block >= begin_basic_block);
 
@@ -46,8 +46,10 @@ void Elf::gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
         for (std::size_t i = 0; i < count; ++i)
         {
             if (!m_debug_info_available)
+            {
                 std::printf("0x%" PRIx64":\t%s\t\t%s\n", insn[i].address,
                         insn[i].mnemonic, insn[i].op_str);
+            }
 
             else
                 m_dwarf->gcov(insn[i].address);

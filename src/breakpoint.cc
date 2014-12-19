@@ -201,7 +201,7 @@ void Breakpoint::put_0xcc(std::size_t i, bool call_ext_lib)
             reinterpret_cast<void*>(m_insn[i].address),
             reinterpret_cast<void*>(data));
 
-    std::printf("breakpoint put at 0x%lx : %d\n", m_insn[i].address, call_ext_lib);
+    //std::printf("breakpoint put at 0x%lx : %d\n", m_insn[i].address, call_ext_lib);
 
     word = ptrace(PTRACE_PEEKDATA, m_pid_child,
             reinterpret_cast<void*>(m_insn[i].address), 0);
