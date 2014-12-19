@@ -59,15 +59,8 @@ void my_sscov(char** argv)
     else if (pid_child == 0)
     {
         ptrace(PTRACE_TRACEME);
-
-        char* bin_argv[32];
-        std::memset(bin_argv, 0, sizeof (char*) * 32);
-        bin_argv[0] = argv[3];
-
-        for (int i = 4, j = 1; i < 31 && argv[i]; ++i, ++j)
-            bin_argv[j] = argv[i];
-
-        execvp(argv[3], bin_argv);
+        execvp(argv[3], &argv[3]);
+        std::cerr << "problem with execvp" << std::endl;
     }
 
     else

@@ -56,14 +56,7 @@ void my_addr2line(char** argv)
     {
         ptrace(PTRACE_TRACEME);
 
-        char* bin_argv[32];
-        std::memset(bin_argv, 0, sizeof (char*) * 32);
-        bin_argv[0] = argv[2];
-
-        for (int i = 3, j = 1; i < 31 && argv[i]; ++i, ++j)
-            bin_argv[j] = argv[i];
-
-        execvp(argv[2], bin_argv);
+        execvp(argv[2], &argv[2]);
         std::cerr << "Error occured with execvp." << std::endl;
     }
 

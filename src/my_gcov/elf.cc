@@ -31,10 +31,6 @@ void Elf::gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
     std::size_t offset = m_text_shdr->sh_offset;
     offset += begin_basic_block - m_text_shdr->sh_addr;
 
-    /*std::cout << "begin\t=\t0x" << std::hex << begin_basic_block << std::endl;
-    std::cout << "end\t=\t0x" << std::hex << end_basic_block << std::endl;
-    std::cout << std::endl;*/
-
     assert(end_basic_block >= begin_basic_block);
 
     cs_insn* insn;
@@ -59,9 +55,9 @@ void Elf::gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
     }
 }
 
-void Elf::print_result_gcov()
+void Elf::write_result_gcov(char* bin_name)
 {
-    m_dwarf->print_result_gcov();
+    m_dwarf->write_result_gcov(bin_name);
 }
 
 std::uint64_t Elf::get_entry_point()

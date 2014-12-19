@@ -21,28 +21,27 @@ public:
     Elf(const std::string& elf_path);
     ~Elf();
 
-    void sscov(std::fstream& stream, const struct user_regs_struct& user_regs);
 
     Elf64_Shdr* find_section_by_name(const std::string&);
 
     void parse_dwarf();
+
     void addr2line(const struct user_regs_struct& user_regs);
+    void sscov(std::fstream& stream, const struct user_regs_struct& user_regs);
     void gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
             csh* handle);
 
     void get_section_text(struct section_text& section_text) const;
+
     bool is_in_section_text(std::uint64_t vaddr) const;
     bool is_debug_info_available() const;
 
-    bool is_in_plt(std::uint64_t rip);
-
-    void print_result_gcov();
+    void write_result_gcov(char* bin_name);
 
     std::uint64_t get_entry_point();
 
 private:
     Elf64_Ehdr* m_ehdr;
-    Elf64_Shdr* m_plt_shdr;
     Elf64_Shdr* m_text_shdr;
     unsigned char* m_buf;
     int m_fd_elf_file;

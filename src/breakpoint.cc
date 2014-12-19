@@ -18,15 +18,12 @@ Breakpoint::Breakpoint(pid_t pid_child, Elf* elf, csh* handle)
     m_handle = handle;
 }
 
-Breakpoint::~Breakpoint()
+void Breakpoint::set_last_executable_addr(std::uint64_t vaddr)
 {
+    m_last_executable_addr = vaddr;
 }
 
-void Breakpoint::set_last_writable_addr(std::uint64_t vaddr)
-{
-    m_last_writable_addr = vaddr;
-}
-
+// I'm looking for interesting pages to mprotect in /proc/<pid>/maps
 void Breakpoint::parse_proc_pid_maps(pid_t pid_child)
 {
     std::ostringstream file_path;
@@ -100,7 +97,7 @@ void Breakpoint::mprotect_ext_lib(int prot)
 void Breakpoint::mprotect_syscall(std::uint64_t vaddr_page, std::size_t len,
         int prot)
 {
-    // syscall and 0xCC
+    // a syscall followed by 0xCC to stop and restore the original code
     std::uint64_t code = 0xCC050F;
     struct user_regs_struct user_regs;
     struct user_regs_struct orig_regs;
@@ -109,41 +106,34 @@ void Breakpoint::mprotect_syscall(std::uint64_t vaddr_page, std::size_t len,
     ptrace(PTRACE_GETREGS, m_pid_child, 0, &user_regs);
     ptrace(PTRACE_GETREGS, m_pid_child, 0, &orig_regs);
 
-    /*std::cout << std::endl;
-    std::cout << "rip = 0x" << std::hex << user_regs.rip << std::endl;
-    std::cout << "prot = " << prot << std::endl;
-    std::cout << "last writable addr = 0x" << std::hex << m_last_writable_addr << std::endl;
-    std::cout << "mprotect addr = 0x" << std::hex << vaddr_page << std::endl;*/
-
     std::uint64_t orig_code = ptrace(PTRACE_PEEKDATA, m_pid_child,
-            reinterpret_cast<void*>(m_last_writable_addr), 0);
+            reinterpret_cast<void*>(m_last_executable_addr), 0);
 
-    user_regs.rip = m_last_writable_addr;
-    user_regs.rax = 10;
+    user_regs.rip = m_last_executable_addr;
+    user_regs.rax = 10; // mprotect
     user_regs.rdi = vaddr_page;
     user_regs.rsi = len;
     user_regs.rdx = prot;
 
+    // inject the mprotect syscall
     ptrace(PTRACE_POKEDATA, m_pid_child,
-            reinterpret_cast<void*>(m_last_writable_addr),
+            reinterpret_cast<void*>(m_last_executable_addr),
             reinterpret_cast<void*>(code));
 
     ptrace(PTRACE_SETREGS, m_pid_child, 0, &user_regs);
+
+    // execute it
     ptrace(PTRACE_CONT, m_pid_child, 0, 0);
     wait(&status);
 
-    /*std::cout << "WSTOPSIG = " << WSTOPSIG(status) << std::endl;
-    if (WSTOPSIG(status) == SIGSEGV)
-        std::exit(1);*/
-
+    // put back the original code
     ptrace(PTRACE_SETREGS, m_pid_child, 0, &orig_regs);
     ptrace(PTRACE_POKEDATA, m_pid_child,
-            reinterpret_cast<void*>(m_last_writable_addr),
+            reinterpret_cast<void*>(m_last_executable_addr),
             reinterpret_cast<void*>(orig_code));
-
-    //std::cout << std::endl;
 }
 
+// put breakpoints on every RET/JMP/CALL in .text section
 void Breakpoint::put_breakpoints()
 {
     std::size_t count;
@@ -158,19 +148,17 @@ void Breakpoint::put_breakpoints()
     {
         for (std::size_t i = 0; i < count; ++i)
         {
-            /*std::printf("0x%" PRIx64":\t%s\t\t%s\n", m_insn[i].address,
-              m_insn[i].mnemonic, m_insn[i].op_str);*/
-
-            int code = 0;
-            if ((code = is_ret_call_jmp(m_insn[i].mnemonic)))
+            int opcode = 0;
+            if ((opcode = is_ret_call_jmp(m_insn[i].mnemonic)))
             {
-                if (code == IS_CALL)
+                if (opcode == IS_CALL)
                 {
                     std::uint64_t addr = std::strtoll(m_insn[i].op_str, NULL, 16);
+                    // if we call a function outside of .text, we break on next instruction
                     if (addr != 0 && !m_elf->is_in_section_text(addr))
                     {
-                        put_0xcc(i, true);
-                        put_0xcc(++i, true);
+                        put_0xcc(i);
+                        put_0xcc(++i);
                         continue;
                     }
                 }
@@ -183,30 +171,22 @@ void Breakpoint::put_breakpoints()
     }
 }
 
-void Breakpoint::put_0xcc(std::size_t i, bool call_ext_lib)
+void Breakpoint::put_0xcc(std::size_t i)
 {
     std::uint64_t word;
     word = ptrace(PTRACE_PEEKDATA, m_pid_child,
             reinterpret_cast<void*>(m_insn[i].address), 0);
 
-    //std::printf("old data = 0x%lx\n", word);
-
     std::uint64_t data = (word & 0xFFFFFFFFFFFFFF00) | 0xCC;
 
-    m_opcode_backup.insert({m_insn[i].address,
-            std::make_pair<std::uint64_t, bool>(std::move(word),
-                    std::move(call_ext_lib))});
+    m_opcode_backup.insert({m_insn[i].address, word});
 
     ptrace(PTRACE_POKEDATA, m_pid_child,
             reinterpret_cast<void*>(m_insn[i].address),
             reinterpret_cast<void*>(data));
 
-    //std::printf("breakpoint put at 0x%lx : %d\n", m_insn[i].address, call_ext_lib);
-
     word = ptrace(PTRACE_PEEKDATA, m_pid_child,
             reinterpret_cast<void*>(m_insn[i].address), 0);
-
-    //std::printf("new data = 0x%lx\n", word);
 }
 
 int Breakpoint::is_ret_call_jmp(char* mnemonic)
@@ -234,14 +214,11 @@ bool Breakpoint::restore_opcode(std::uint64_t vaddr)
             reinterpret_cast<void*>(vaddr));
 
     data &= 0xFFFFFFFFFFFFFF00;
-    data |= (m_opcode_backup[vaddr].first & 0x00000000000000FF);
+    data |= (m_opcode_backup[vaddr] & 0x00000000000000FF);
 
     ptrace(PTRACE_POKEDATA, m_pid_child,
             reinterpret_cast<void*>(vaddr),
             reinterpret_cast<void*>(data));
-
-    /*std::printf("word 0x%lx restore at 0x%lx\n", m_opcode_backup[vaddr].first,
-            vaddr);*/
 
     return true;
 }
@@ -256,11 +233,4 @@ void Breakpoint::restore_breakpoint(std::uint64_t vaddr)
     ptrace(PTRACE_POKEDATA, m_pid_child,
             reinterpret_cast<void*>(vaddr),
             reinterpret_cast<void*>(data));
-
-    //std::cout << "breakpoint restore at 0x" << std::hex << vaddr << std::endl;
-}
-
-bool Breakpoint::is_call_to_ext_code(std::uint64_t vaddr)
-{
-    return m_opcode_backup[vaddr].second;
 }

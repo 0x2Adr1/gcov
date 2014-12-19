@@ -3,8 +3,8 @@
 
 # include <list>
 # include <fstream>
-# include <memory>
 # include <vector>
+# include <memory>
 # include <string>
 # include <unordered_map>
 # include <elf.h>
@@ -34,7 +34,7 @@ struct debug_line_hdr
     std::uint16_t version;
     std::uint32_t prologue_length;
     unsigned char min_inst_length;
-    //unsigned char max_inst_length;
+    // unsigned char max_inst_length;
     unsigned char default_is_stmt;
     char line_base;
     unsigned char line_range;
@@ -56,9 +56,12 @@ struct range_addr
 class Dwarf
 {
 public:
-    // buf contains the elf file
-    Dwarf(unsigned char* buf, Elf64_Shdr* debug_info, Elf64_Shdr* debug_str,
-            Elf64_Shdr* debug_aranges, Elf64_Shdr* debug_line,
+    // buf refer to the mapped elf file
+    Dwarf(unsigned char* buf,
+            Elf64_Shdr* debug_info,
+            Elf64_Shdr* debug_str,
+            Elf64_Shdr* debug_aranges,
+            Elf64_Shdr* debug_line,
             Elf64_Shdr* debug_abbrev);
 
     ~Dwarf();
@@ -73,7 +76,7 @@ public:
 
     void gcov(std::uint64_t vaddr);
     void gcov_incr_line_count(std::uint64_t rip, struct range_addr&);
-    void print_result_gcov();
+    void write_result_gcov(char* bin_name);
 
     std::uint64_t get_leb128(std::size_t& offset, bool sign,
             bool modify_offset = true);
@@ -88,8 +91,8 @@ private:
     void print_file_line(unsigned char* comp_dir, unsigned char* file_name);
 
     void reset_registers();
-    bool get_line_number(std::uint64_t rip,
-            std::uint32_t debug_line_offset);
+
+    bool get_line_number(std::uint64_t rip, std::uint32_t debug_line_offset);
 
     void insert_file_in_map(struct range_addr& range_addr);
 
@@ -116,7 +119,7 @@ private:
     std::uint32_t m_reg_isa;
     std::uint32_t m_reg_discriminator;
 
-    // map a file with an fstream object for fast retrieval in print_file_line()
+    // map a file_path with an ifstream object
     std::unordered_map<std::string, std::shared_ptr<std::ifstream> >
         m_map_ifstream;
 

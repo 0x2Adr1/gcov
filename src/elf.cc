@@ -29,7 +29,6 @@ Elf::Elf(const std::string& elf_path) : m_dwarf(nullptr)
     m_ehdr = reinterpret_cast<Elf64_Ehdr*>(m_buf);
 
     m_text_shdr = find_section_by_name(".text");
-    m_plt_shdr = find_section_by_name(".plt");
     m_dwarf = nullptr;
     m_debug_info_available = true;
 
@@ -47,8 +46,7 @@ Elf::~Elf()
 
 Elf64_Shdr* Elf::find_section_by_name(const std::string& section_name)
 {
-    Elf64_Shdr* shdr_string =
-        reinterpret_cast<Elf64_Shdr*>
+    Elf64_Shdr* shdr_string = reinterpret_cast<Elf64_Shdr*>
         (&m_buf[m_ehdr->e_shoff + m_ehdr->e_shstrndx * m_ehdr->e_shentsize]);
 
     int index = m_ehdr->e_shoff;
@@ -62,12 +60,6 @@ Elf64_Shdr* Elf::find_section_by_name(const std::string& section_name)
     }
 
     return nullptr;
-}
-
-bool Elf::is_in_plt(std::uint64_t rip)
-{
-    return (rip >= m_plt_shdr->sh_addr)
-        && (rip < m_plt_shdr->sh_addr + m_plt_shdr->sh_size);
 }
 
 bool Elf::is_debug_info_available() const

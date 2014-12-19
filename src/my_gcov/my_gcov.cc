@@ -31,6 +31,70 @@ static void init_capstone(csh* handle)
     }
 }
 
+static void handle_segfault(Breakpoint& bp, Elf& elf, pid_t pid_child,
+        bool& child_is_in_ext_lib, bool& set_begin_basic_block,
+        std::uint64_t& begin_basic_block)
+{
+    struct user_regs_struct user_regs;
+    int status;
+
+    if (!child_is_in_ext_lib)
+    {
+        bp.mprotect_ext_lib(PROT_READ | PROT_WRITE | PROT_EXEC);
+        ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
+        wait(&status);
+        ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
+        bp.set_last_executable_addr(user_regs.rip);
+        bp.mprotect_section_text(PROT_READ | PROT_WRITE);
+    }
+
+    else
+    {
+        bp.mprotect_section_text(PROT_READ | PROT_WRITE | PROT_EXEC);
+
+        ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
+        bp.set_last_executable_addr(user_regs.rip);
+
+        if (elf.is_in_section_text(user_regs.rip))
+        {
+            begin_basic_block = user_regs.rip;
+            set_begin_basic_block = false;
+        }
+
+        bp.mprotect_ext_lib(PROT_READ | PROT_WRITE);
+    }
+
+    child_is_in_ext_lib = !child_is_in_ext_lib;
+}
+
+static void search_next_begin_basic_block(pid_t pid_child, Breakpoint& bp,
+        Elf& elf, std::uint64_t& begin_basic_block, bool& set_begin_basic_block,
+        bool& restore_breakpoint, std::uint64_t tmp_rip)
+{
+    struct user_regs_struct user_regs;
+    int status;
+
+    ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
+    wait(&status);
+    ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
+
+    while (!elf.is_in_section_text(user_regs.rip)
+            && (WSTOPSIG(status) != SIGSEGV))
+    {
+        ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
+        wait(&status);
+        ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
+    }
+
+    if (WSTOPSIG(status) != SIGSEGV)
+    {
+        begin_basic_block = user_regs.rip;
+        set_begin_basic_block = false;
+        bp.restore_breakpoint(tmp_rip);
+        restore_breakpoint = false;
+    }
+}
+
 static void trace_child(pid_t pid_child, char** argv)
 {
     Elf elf(argv[2]);
@@ -55,7 +119,7 @@ static void trace_child(pid_t pid_child, char** argv)
     std::uint64_t end_basic_block = 0;
     std::uint64_t tmp_rip = 0;
 
-    bp.set_last_writable_addr(elf.get_entry_point());
+    bp.set_last_executable_addr(elf.get_entry_point());
 
     bool child_is_in_ext_lib = false;
     bool flag = false;
@@ -82,54 +146,14 @@ static void trace_child(pid_t pid_child, char** argv)
         if (WIFEXITED(status) || WIFSIGNALED(status))
             break;
 
-        if (!WIFSTOPPED(status))
-        {
-            std::cerr << "problem: we have not break, it's weird" << std::endl;
-            std::exit(1);
-        }
-
         ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
-        /*std::printf("BREAK ! rip = 0x%llx\n", user_regs.rip);
-          std::cout << "WSTOPSIG = " << WSTOPSIG(status) << std::endl;
-          std::printf("instr = 0x%lx\n", ptrace(PTRACE_PEEKDATA, pid_child,
-          reinterpret_cast<void*>(user_regs.rip), 0));
-          std::cout << std::endl;*/
 
         if (WSTOPSIG(status) == SIGSEGV)
         {
-            //std::cout << "SEGV ! " << child_is_in_ext_lib << std::endl;
-            if (!child_is_in_ext_lib)
-            {
-                bp.mprotect_ext_lib(PROT_READ | PROT_WRITE | PROT_EXEC);
-                ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
-                wait(&status);
-                ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
-                bp.set_last_writable_addr(user_regs.rip);
-                bp.mprotect_section_text(PROT_READ | PROT_WRITE);
-            }
-
-            else
-            {
-                bp.mprotect_section_text(PROT_READ | PROT_WRITE | PROT_EXEC);
-
-                ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
-                bp.set_last_writable_addr(user_regs.rip);
-
-                if (elf.is_in_section_text(user_regs.rip))
-                {
-                    begin_basic_block = user_regs.rip;
-                    set_begin_basic_block = false;
-                }
-
-                bp.mprotect_ext_lib(PROT_READ | PROT_WRITE);
-            }
-
-            child_is_in_ext_lib = !child_is_in_ext_lib;
+            handle_segfault(bp, elf, pid_child, child_is_in_ext_lib,
+                    set_begin_basic_block, begin_basic_block);
             continue;
         }
-
-        /*if (!bp.restore_opcode(user_regs.rip - 1))
-          continue;*/
 
         bp.restore_opcode(user_regs.rip - 1);
         restore_breakpoint = true;
@@ -145,43 +169,21 @@ static void trace_child(pid_t pid_child, char** argv)
         {
             end_basic_block = user_regs.rip;
             elf.gcov(begin_basic_block, end_basic_block, &handle);
-            /*std::cout << "begin\t=\t0x" << std::hex << begin_basic_block << std::endl;
-              std::cout << "end\t=\t0x" << std::hex << end_basic_block << std::endl;
-              std::cout << std::endl;*/
         }
 
         set_begin_basic_block = !set_begin_basic_block;
-
         ptrace(PTRACE_SETREGS, pid_child, 0, &user_regs);
-
-        bp.set_last_writable_addr(user_regs.rip);
+        bp.set_last_executable_addr(user_regs.rip);
 
         if (set_begin_basic_block)
         {
-            ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
-            wait(&status);
-            ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
-
-            while (!elf.is_in_section_text(user_regs.rip)
-                    && (WSTOPSIG(status) != SIGSEGV))
-            {
-                ptrace(PTRACE_SINGLESTEP, pid_child, 0, 0);
-                wait(&status);
-                ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
-            }
-
-            if (WSTOPSIG(status) != SIGSEGV)
-            {
-                begin_basic_block = user_regs.rip;
-                set_begin_basic_block = false;
-                bp.restore_breakpoint(tmp_rip);
-                restore_breakpoint = false;
-            }
+            search_next_begin_basic_block(pid_child, bp, elf, begin_basic_block,
+                    set_begin_basic_block, restore_breakpoint, tmp_rip);
         }
     }
 
     if (elf.is_debug_info_available())
-        elf.print_result_gcov();
+        elf.write_result_gcov(argv[2]);
 
     cs_close(&handle);
 }
@@ -199,15 +201,7 @@ void my_gcov(char** argv)
     else if (pid_child == 0)
     {
         ptrace(PTRACE_TRACEME);
-
-        char* bin_argv[32];
-        std::memset(bin_argv, 0, sizeof (char*) * 32);
-        bin_argv[0] = argv[2];
-
-        for (int i = 3, j = 1; i < 31 && argv[i]; ++i, ++j)
-            bin_argv[j] = argv[i];
-
-        execvp(argv[2], bin_argv);
+        execvp(argv[2], &argv[2]);
         std::cerr << "Error occured with execvp." << std::endl;
     }
 

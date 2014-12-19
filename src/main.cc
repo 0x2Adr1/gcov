@@ -6,11 +6,15 @@
 #include "my_addr2line/my_addr2line.hh"
 #include "my_gcov/my_gcov.hh"
 
-static void usage()
+static void usage(const char* custom_usage = nullptr)
 {
-    std::cout << "Usage: ./my_gcov --level{1|2|3|4} /path/to/binary [args]";
-    std::cout << std::endl;
+    if (custom_usage)
+        std::cout << custom_usage;
 
+    else
+        std::cout << "Usage: ./my_gcov --level{1|2|3|4} /path/to/binary [args]";
+
+    std::cout << std::endl;
     std::exit(EXIT_FAILURE);
 }
 
@@ -27,7 +31,7 @@ int main(int argc, char *argv[])
     else if (level_str == "--level2")
     {
         if (argc < 4)
-            usage();
+            usage("Usage: ./my_gcov --level2 <file> /path/to/binary [args]");
 
         my_sscov(argv);
     }
@@ -39,7 +43,7 @@ int main(int argc, char *argv[])
         my_gcov(argv);
 
     else
-        std::cout << "levels available are 1, 2, 3 and 4" << std::endl;
+        usage();
 
     return EXIT_SUCCESS;
 }

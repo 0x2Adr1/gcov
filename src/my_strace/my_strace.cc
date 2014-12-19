@@ -1,15 +1,15 @@
-#include <sys/types.h> // pid_t
-#include <sys/ptrace.h> // ptrace()
-#include <sys/wait.h> // waitpid()
-#include <sys/user.h> // struct user_regs_struct
+#include <sys/types.h>
+#include <sys/ptrace.h>
+#include <sys/wait.h>
+#include <sys/user.h>
 
-#include <cstdlib> // std::exit()
-#include <cstring> // memset
+#include <cstdlib>
+#include <cstring>
 
-#include <iostream> // std::cerr
+#include <iostream>
 #include <string>
 
-#include <unistd.h> // fork()
+#include <unistd.h>
 
 #include "my_strace.hh"
 #include "syscall_table.hh" // see syscall_table.py
@@ -20,8 +20,8 @@ static void trace_child(pid_t pid_child)
     struct user_regs_struct user_regs;
     bool enter_syscall = true;
 
-    // our child tell us that he is starting execution (execve)
     wait(&status);
+    ptrace(PTRACE_SETOPTIONS, pid_child, 0, PTRACE_O_TRACESYSGOOD);
 
     const std::string syscall_name[] =
     {
@@ -31,25 +31,28 @@ static void trace_child(pid_t pid_child)
     while (true)
     {
         ptrace(PTRACE_SYSCALL, pid_child, 0, 0);
-        // this time he tell us that he enters in a syscall
         wait(&status);
 
         if (WIFEXITED(status))
             break;
 
-        ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
-
-        if (enter_syscall)
+        // we stopped because of a syscall
+        if (WIFSTOPPED(status) && WSTOPSIG(status) & 0x80)
         {
-            std::cout << syscall_name[user_regs.orig_rax] << "() = ";
-            enter_syscall = false;
-        }
+            ptrace(PTRACE_GETREGS, pid_child, 0, &user_regs);
 
-        else
-        {
-            std::cout << static_cast<signed long long>(user_regs.rax);
-            std::cout << std::endl;
-            enter_syscall = true;
+            if (enter_syscall)
+            {
+                std::cout << syscall_name[user_regs.orig_rax] << "() = ";
+                enter_syscall = false;
+            }
+
+            else
+            {
+                std::cout << static_cast<long long>(user_regs.rax);
+                std::cout << std::endl;
+                enter_syscall = true;
+            }
         }
     }
 }
@@ -67,15 +70,8 @@ void my_strace(char** argv)
     else if (pid_child == 0)
     {
         ptrace(PTRACE_TRACEME);
-
-        char* bin_argv[32];
-        std::memset(bin_argv, 0, sizeof (char*) * 32);
-        bin_argv[0] = argv[2];
-
-        for (int i = 3, j = 1; i < 31 && argv[i]; ++i, ++j)
-            bin_argv[j] = argv[i];
-
-        execvp(argv[2], bin_argv);
+        execvp(argv[2], &argv[2]);
+        std::cerr << "problem with execvp" << std::endl;
     }
 
     else
