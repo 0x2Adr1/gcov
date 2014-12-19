@@ -214,7 +214,7 @@ void Dwarf::handle_extended_opcode(std::size_t& offset)
             break;
 
         case DW_LNE_set_address:
-            m_reg_address = *reinterpret_cast<unsigned long long*>
+            m_reg_address = *reinterpret_cast<std::uint64_t*>
                 (&m_buf[offset + 1]);
             m_reg_op_index = 0;
             //std::cout << "extended opcode set address to 0x" << std::hex << m_reg_address << std::endl;
@@ -243,12 +243,12 @@ void Dwarf::handle_extended_opcode(std::size_t& offset)
 }
 
 bool Dwarf::handle_special_opcode(std::size_t& offset,
-        struct debug_line_hdr* debug_line_hdr, unsigned long long rip)
+        struct debug_line_hdr* debug_line_hdr, std::uint64_t rip)
 {
     unsigned char adjusted_opcode = m_buf[offset] - debug_line_hdr->opcode_base;
     int op_advance = adjusted_opcode / debug_line_hdr->line_range;
 
-    unsigned long long tmp_address = m_reg_address;
+    std::uint64_t tmp_address = m_reg_address;
 
     m_reg_address += op_advance;
 
@@ -271,11 +271,11 @@ bool Dwarf::handle_special_opcode(std::size_t& offset,
 }
 
 bool Dwarf::handle_standard_opcode(std::size_t& offset,
-        struct debug_line_hdr* debug_line_hdr, unsigned long long rip)
+        struct debug_line_hdr* debug_line_hdr, std::uint64_t rip)
 {
     unsigned char opcode = m_buf[offset++];
     int op_advance = 0;
-    unsigned long long tmp_address = 0;
+    std::uint64_t tmp_address = 0;
 
     switch (opcode)
     {
@@ -355,8 +355,8 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
     return false;
 }
 
-bool Dwarf::get_line_number(unsigned long long rip,
-        unsigned int debug_line_offset)
+bool Dwarf::get_line_number(std::uint64_t rip,
+        std::uint32_t debug_line_offset)
 {
     struct debug_line_hdr* debug_line_hdr;
     std::size_t offset = m_debug_line->sh_offset + debug_line_offset;
@@ -415,10 +415,10 @@ void Dwarf::print_file_line(unsigned char* comp_dir, unsigned char* file_name)
     std::cout << std::endl;
 }
 
-void Dwarf::addr2line_print_instruction(unsigned long long rip,
+void Dwarf::addr2line_print_instruction(std::uint64_t rip,
         struct range_addr& range_addr)
 {
-    static unsigned int old_line_number = 0;
+    static std::uint32_t old_line_number = 0;
     reset_registers();
 
     if (!get_line_number(rip, range_addr.debug_line_offset))
@@ -451,7 +451,7 @@ void Dwarf::addr2line_print_instruction(unsigned long long rip,
 
 void Dwarf::addr2line(const struct user_regs_struct& user_regs)
 {
-    unsigned long long rip = user_regs.rip;
+    std::uint64_t rip = user_regs.rip;
 
     for (auto& elt : m_list_range)
         if (rip >= elt.begin && rip < (elt.begin + elt.offset))

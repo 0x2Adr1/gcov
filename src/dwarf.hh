@@ -21,9 +21,9 @@ struct debug_info_hdr
 
 struct debug_aranges_hdr
 {
-    unsigned int length;
-    unsigned short version;
-    unsigned int debug_info_offset;
+    std::uint32_t length;
+    std::uint16_t version;
+    std::uint32_t debug_info_offset;
     unsigned char addr_size;
     unsigned char seg_size;
 } __attribute__ ((__packed__));
@@ -45,12 +45,12 @@ struct debug_line_hdr
 
 struct range_addr
 {
-    unsigned long long begin;
-    unsigned long long offset;
-    unsigned int debug_info_offset;
-    unsigned int debug_line_offset;
-    unsigned int debug_str_file_name_offset;
-    unsigned int debug_str_comp_dir_offset;
+    std::uint64_t begin;
+    std::uint64_t offset;
+    std::uint32_t debug_info_offset;
+    std::uint32_t debug_line_offset;
+    std::uint32_t debug_str_file_name_offset;
+    std::uint32_t debug_str_comp_dir_offset;
 };
 
 class Dwarf
@@ -68,7 +68,7 @@ public:
 
     void get_debug_line_offset(struct range_addr&);
     void addr2line(const struct user_regs_struct& user_regs);
-    void addr2line_print_instruction(unsigned long long rip,
+    void addr2line_print_instruction(std::uint64_t rip,
             struct range_addr&);
 
     void gcov(std::uint64_t vaddr);
@@ -81,15 +81,15 @@ public:
 private:
     void handle_extended_opcode(std::size_t& offset);
     bool handle_special_opcode(std::size_t& offset, struct debug_line_hdr*,
-            unsigned long long rip);
+            std::uint64_t rip);
     bool handle_standard_opcode(std::size_t& offset, struct debug_line_hdr*,
-            unsigned long long rip);
+            std::uint64_t rip);
 
     void print_file_line(unsigned char* comp_dir, unsigned char* file_name);
 
     void reset_registers();
-    bool get_line_number(unsigned long long rip,
-            unsigned int debug_line_offset);
+    bool get_line_number(std::uint64_t rip,
+            std::uint32_t debug_line_offset);
 
     void insert_file_in_map(struct range_addr& range_addr);
 
@@ -103,18 +103,18 @@ private:
     Elf64_Shdr* m_debug_line;
     Elf64_Shdr* m_debug_abbrev;
 
-    unsigned long long m_reg_address;
-    unsigned int m_reg_op_index;
-    unsigned int m_reg_file;
-    unsigned int m_reg_line;
-    unsigned int m_reg_column;
-    unsigned int m_reg_is_stmt;
-    unsigned int m_reg_basic_block;
-    unsigned int m_reg_end_sequence;
-    unsigned int m_reg_prologue_end;
-    unsigned int m_reg_epilogue_begin;
-    unsigned int m_reg_isa;
-    unsigned int m_reg_discriminator;
+    std::uint64_t m_reg_address;
+    std::uint32_t m_reg_op_index;
+    std::uint32_t m_reg_file;
+    std::uint32_t m_reg_line;
+    std::uint32_t m_reg_column;
+    std::uint32_t m_reg_is_stmt;
+    std::uint32_t m_reg_basic_block;
+    std::uint32_t m_reg_end_sequence;
+    std::uint32_t m_reg_prologue_end;
+    std::uint32_t m_reg_epilogue_begin;
+    std::uint32_t m_reg_isa;
+    std::uint32_t m_reg_discriminator;
 
     // map a file with an fstream object for fast retrieval in print_file_line()
     std::unordered_map<std::string, std::shared_ptr<std::ifstream> >
