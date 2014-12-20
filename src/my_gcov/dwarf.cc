@@ -78,6 +78,8 @@ void Dwarf::write_result_gcov(char* bin_name)
             std::fprintf(output_file, "%.4lu:", i);
             std::fprintf(output_file, "%s\n", line.c_str());
         }
+
+        std::fputc('\n', output_file);
     }
 
     std::fclose(output_file);
