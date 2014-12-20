@@ -34,11 +34,8 @@ void Dwarf::gcov_incr_line_count(std::uint64_t rip,
     else
         old_line_number = m_reg_line;
 
-    unsigned char* comp_dir =
-        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_comp_dir_offset];
-
-    unsigned char* file_name =
-        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset];
+    unsigned char* comp_dir = &m_buf[range_addr.comp_dir_offset];
+    unsigned char* file_name = &m_buf[range_addr.file_name_offset];
 
     std::string file_path(reinterpret_cast<char*>(comp_dir));
     std::string file_name_string(reinterpret_cast<char*>(file_name));
