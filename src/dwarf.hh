@@ -49,8 +49,8 @@ struct range_addr
     std::uint64_t offset;
     std::uint32_t debug_info_offset;
     std::uint32_t debug_line_offset;
-    std::uint32_t debug_str_file_name_offset;
-    std::uint32_t debug_str_comp_dir_offset;
+    std::uint32_t file_name_offset;
+    std::uint32_t comp_dir_offset;
 };
 
 class Dwarf

@@ -109,11 +109,8 @@ void Dwarf::map_range_addr_to_cu()
 
 void Dwarf::insert_file_in_map(struct range_addr& range_addr)
 {
-    unsigned char* comp_dir =
-        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_comp_dir_offset];
-
-    unsigned char* file_name =
-        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset];
+    unsigned char* comp_dir = &m_buf[range_addr.comp_dir_offset];
+    unsigned char* file_name = &m_buf[range_addr.file_name_offset];
 
     std::string file_path(reinterpret_cast<char*>(comp_dir));
     std::string file_name_string(reinterpret_cast<char*>(file_name));
@@ -183,8 +180,12 @@ std::size_t Dwarf::get_form_size(unsigned char byte, struct debug_info_hdr*
 
     case DW_FORM_sec_offset:
         return 4;
+
+    case DW_FORM_string:
+        return std::strlen(reinterpret_cast<char*>(&m_buf[offset])) + 1;
     }
 
+    std::cerr << "unknown DW_FORM" << std::endl;
     return 0;
 }
 
@@ -206,13 +207,27 @@ void Dwarf::get_debug_line_offset(struct range_addr& range_addr)
         switch (m_buf[i])
         {
         case DW_AT_comp_dir:
-            range_addr.debug_str_comp_dir_offset =
-                *reinterpret_cast<std::uint32_t*>(&m_buf[offset]);
+            if (m_buf[i + 1] == DW_FORM_string)
+                range_addr.comp_dir_offset = offset;
+
+            else
+            {
+                range_addr.comp_dir_offset = m_debug_str->sh_offset;
+                range_addr.comp_dir_offset +=
+                    *reinterpret_cast<std::uint32_t*>(&m_buf[offset]);
+            }
             break;
 
         case DW_AT_name:
-            range_addr.debug_str_file_name_offset =
-                *reinterpret_cast<std::uint32_t*>(&m_buf[offset]);
+            if (m_buf[i + 1] == DW_FORM_string)
+                range_addr.file_name_offset = offset;
+
+            else
+            {
+                range_addr.file_name_offset = m_debug_str->sh_offset;
+                range_addr.file_name_offset +=
+                    *reinterpret_cast<std::uint32_t*>(&m_buf[offset]);
+            }
             break;
 
         case DW_AT_stmt_list:
@@ -447,11 +462,8 @@ void Dwarf::addr2line_print_instruction(std::uint64_t rip,
     else
         old_line_number = m_reg_line;
 
-    unsigned char* comp_dir =
-        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_comp_dir_offset];
-
-    unsigned char* file_name =
-        &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset];
+    unsigned char* comp_dir = &m_buf[range_addr.comp_dir_offset];
+    unsigned char* file_name = &m_buf[range_addr.file_name_offset];
 
     std::cout << std::hex << "0x" << rip << ": ";
 
