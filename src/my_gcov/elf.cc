@@ -55,9 +55,9 @@ void Elf::gcov(std::uint64_t begin_basic_block, std::uint64_t end_basic_block,
     }
 }
 
-void Elf::write_result_gcov(char* bin_name)
+void Elf::write_result_gcov()
 {
-    m_dwarf->write_result_gcov(bin_name);
+    m_dwarf->write_result_gcov();
 }
 
 std::uint64_t Elf::get_entry_point()

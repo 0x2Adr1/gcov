@@ -76,7 +76,7 @@ public:
 
     void gcov(std::uint64_t vaddr);
     void gcov_incr_line_count(std::uint64_t rip, struct range_addr&);
-    void write_result_gcov(char* bin_name);
+    void write_result_gcov();
 
     std::uint64_t get_leb128(std::size_t& offset, bool sign,
             bool modify_offset = true);

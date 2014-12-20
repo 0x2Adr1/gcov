@@ -183,7 +183,7 @@ static void trace_child(pid_t pid_child, char** argv)
     }
 
     if (elf.is_debug_info_available())
-        elf.write_result_gcov(argv[2]);
+        elf.write_result_gcov();
 
     cs_close(&handle);
 }

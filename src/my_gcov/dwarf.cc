@@ -1,6 +1,8 @@
 #include "../dwarf.hh"
 
 #include <iostream>
+#include <sys/stat.h>
+#include <assert.h>
 #include <cstdio>
 
 void Dwarf::gcov(std::uint64_t rip)
@@ -51,13 +53,8 @@ void Dwarf::gcov_incr_line_count(std::uint64_t rip,
         ++m_gcov_vect[file_path][m_reg_line - 1];
 }
 
-void Dwarf::write_result_gcov(char* bin_name)
+void Dwarf::write_result_gcov()
 {
-    std::string output_file_string(bin_name);
-    output_file_string += ".cov";
-
-    FILE* output_file = std::fopen(output_file_string.c_str(), "w");
-
     for (auto& elt : m_gcov_vect)
     {
         std::shared_ptr<std::ifstream> file_ptr = m_map_ifstream[elt.first];
@@ -65,9 +62,21 @@ void Dwarf::write_result_gcov(char* bin_name)
 
         std::string line;
 
-        std::fprintf(output_file, "%s\n\n", elt.first.c_str());
+        const char* file_path = elt.first.c_str();
+        std::size_t i;
 
-        for (std::size_t i = 1; std::getline(*file_ptr, line); ++i)
+        assert(elt.first.length() > 0);
+        for (i = elt.first.length() - 1; i > 0
+                && file_path[i] != '/'; --i)
+            ;
+
+        std::string output_file_string(&file_path[i ? i + 1 : i]);
+        mkdir("cov_files", 0755);
+        output_file_string = "cov_files/" + output_file_string + ".cov";
+
+        FILE* output_file = std::fopen(output_file_string.c_str(), "w");
+
+        for (i = 1; std::getline(*file_ptr, line); ++i)
         {
             if (elt.second[i - 1] == 0)
                 std::fprintf(output_file, "-:\t");
@@ -80,7 +89,6 @@ void Dwarf::write_result_gcov(char* bin_name)
         }
 
         std::fputc('\n', output_file);
+        std::fclose(output_file);
     }
-
-    std::fclose(output_file);
 }

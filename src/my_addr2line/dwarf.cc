@@ -49,7 +49,6 @@ std::uint64_t Dwarf::get_leb128(std::size_t& offset, bool sign,
         byte = m_buf[offset++];
         result |= ((std::uint64_t) (byte & 0x7F)) << shift;
         shift += 7;
-
     } while (byte & 0x80);
 
     if (sign && (shift < 8 * sizeof (result)) && (byte & 0x40))
@@ -236,7 +235,7 @@ void Dwarf::handle_extended_opcode(std::size_t& offset)
 
     if (length == 0)
     {
-        std::cerr << "problem: length for extended opcode is null." << std::endl;
+        std::cerr << "error: length for extended opcode is null." << std::endl;
         std::exit(1);
     }
 
@@ -258,9 +257,14 @@ void Dwarf::handle_extended_opcode(std::size_t& offset)
         get_leb128(offset, false, false);
         break;
 
+    case DW_LNE_define_file:
+        offset += std::strlen(reinterpret_cast<char*>(&m_buf[offset + 1]));
+        get_leb128(offset, false);
+        get_leb128(offset, false);
+        break;
+
     default:
         std::printf("Uknown extended opcode 0x%x\n", extended_opcode);
-        std::exit(1);
         break;
     }
 
@@ -352,7 +356,6 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
     default:
         offset += debug_line_hdr->standard_opcode_lengths[opcode - 1];
         std::printf("Unknown standard opcode: 0x%x\n", opcode);
-        std::exit(1);
         break;
     }
 
@@ -434,7 +437,7 @@ void Dwarf::addr2line_print_instruction(std::uint64_t rip,
         std::cerr << "Can't find the line corresponding to this instruction.";
         std::cerr << std::endl << "(0x" << std::hex << rip << ")" << std::endl;
         std::cerr << std::endl;
-        std::exit(1);
+        return;
     }
 
     // we have a line that is composed with more than one cpu instruction

@@ -36,7 +36,7 @@ public:
     bool is_in_section_text(std::uint64_t vaddr) const;
     bool is_debug_info_available() const;
 
-    void write_result_gcov(char* bin_name);
+    void write_result_gcov();
 
     std::uint64_t get_entry_point();
 

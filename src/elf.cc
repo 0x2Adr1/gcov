@@ -9,7 +9,7 @@
 #include <iostream>
 #include <cstring>
 
-Elf::Elf(const std::string& elf_path) : m_dwarf(nullptr)
+Elf::Elf(const std::string& elf_path)
 {
     struct stat buf;
 
