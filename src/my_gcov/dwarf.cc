@@ -40,23 +40,30 @@ void Dwarf::gcov_incr_line_count(std::uint64_t rip,
 
     std::string file_path(reinterpret_cast<char*>(comp_dir));
     std::string file_name_string(reinterpret_cast<char*>(file_name));
-    file_path += "/" + file_name_string;
 
-    ++m_gcov_vect[file_path][m_reg_line - 1];
+    if (file_name_string[0] == '/')
+        file_path = file_name_string;
+
+    else
+        file_path += "/" + file_name_string;
+
+    if (m_reg_line - 1 < m_gcov_vect[file_path].size())
+        ++m_gcov_vect[file_path][m_reg_line - 1];
 }
 
 void Dwarf::write_result_gcov(char* bin_name)
 {
+    std::string output_file_string(bin_name);
+    output_file_string += ".cov";
+
+    FILE* output_file = std::fopen(output_file_string.c_str(), "w");
+
     for (auto& elt : m_gcov_vect)
     {
         std::shared_ptr<std::ifstream> file_ptr = m_map_ifstream[elt.first];
         file_ptr->seekg(file_ptr->beg);
 
         std::string line;
-        std::string output_file_name(bin_name);
-
-        output_file_name += ".cov";
-        FILE* output_file = std::fopen(output_file_name.c_str(), "w");
 
         std::fprintf(output_file, "%s\n\n", elt.first.c_str());
 
@@ -71,7 +78,7 @@ void Dwarf::write_result_gcov(char* bin_name)
             std::fprintf(output_file, "%.4lu:", i);
             std::fprintf(output_file, "%s\n", line.c_str());
         }
-
-        fclose(output_file);
     }
+
+    std::fclose(output_file);
 }

@@ -26,6 +26,7 @@ class Breakpoint
 {
 public:
     Breakpoint(pid_t pid_child, Elf* elf, csh* handle);
+    ~Breakpoint();
 
     // put breakpoints on every RET/JMP/CALL in .text section
     void put_breakpoints();

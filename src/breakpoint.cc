@@ -18,6 +18,10 @@ Breakpoint::Breakpoint(pid_t pid_child, Elf* elf, csh* handle)
     m_handle = handle;
 }
 
+Breakpoint::~Breakpoint()
+{
+}
+
 void Breakpoint::set_last_executable_addr(std::uint64_t vaddr)
 {
     m_last_executable_addr = vaddr;

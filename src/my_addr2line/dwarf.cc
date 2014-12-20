@@ -119,10 +119,13 @@ void Dwarf::insert_file_in_map(struct range_addr& range_addr)
     std::string file_path(reinterpret_cast<char*>(comp_dir));
     std::string file_name_string(reinterpret_cast<char*>(file_name));
 
-    file_path += "/" + file_name_string;
+    if (file_name_string[0] == '/')
+        file_path = file_name_string;
 
-    m_map_ifstream.insert({file_path, std::make_shared<std::ifstream>
-            (file_path)});
+    else
+        file_path += "/" + file_name_string;
+
+    m_map_ifstream.insert({file_path, std::make_shared<std::ifstream>(file_path)});
 
     std::ifstream& file_stream = *m_map_ifstream[file_path];
 
@@ -138,6 +141,54 @@ void Dwarf::insert_file_in_map(struct range_addr& range_addr)
     m_gcov_vect.insert({file_path, std::move(vect)});
 }
 
+std::size_t Dwarf::get_form_size(unsigned char byte, struct debug_info_hdr*
+        debug_info_hdr, std::size_t offset)
+{
+    switch (byte)
+    {
+    case DW_FORM_strp:
+        return 4;
+
+    case DW_FORM_addr:
+        return debug_info_hdr->addr_size;
+
+    case DW_FORM_block1:
+        return 1;
+
+    case DW_FORM_block2:
+        return 2;
+
+    case DW_FORM_block4:
+        return 4;
+
+    case DW_FORM_block:
+        return get_leb128(offset, false, false);
+
+    case DW_FORM_data1:
+        return 1;
+
+    case DW_FORM_data2:
+        return 2;
+
+    case DW_FORM_data4:
+        return 4;
+
+    case DW_FORM_data8:
+        return 8;
+
+    case DW_FORM_sdata:
+        return get_leb128(offset, true, false);
+
+    case DW_FORM_udata:
+        return get_leb128(offset, false, false);
+
+    case DW_FORM_sec_offset:
+        return 4;
+    }
+
+    return 0;
+}
+
 void Dwarf::get_debug_line_offset(struct range_addr& range_addr)
 {
     struct debug_info_hdr* debug_info_hdr;
@@ -150,44 +201,30 @@ void Dwarf::get_debug_line_offset(struct range_addr& range_addr)
     offset += sizeof (struct debug_info_hdr) + 1;
 
     std::size_t i = 3 + m_debug_abbrev->sh_offset + debug_info_hdr->abbrev_offset;
-    while (m_buf[i] != DW_AT_stmt_list)
+
+    while (m_buf[i])
     {
         switch (m_buf[i])
         {
-        case DW_AT_producer:
-            offset += 4;
-            break;
-
         case DW_AT_comp_dir:
             range_addr.debug_str_comp_dir_offset =
                 *reinterpret_cast<std::uint32_t*>(&m_buf[offset]);
-            offset += 4;
             break;
 
         case DW_AT_name:
             range_addr.debug_str_file_name_offset =
                 *reinterpret_cast<std::uint32_t*>(&m_buf[offset]);
-            offset += 4;
             break;
 
-        case DW_AT_low_pc:
-        case DW_AT_high_pc:
-            offset += debug_info_hdr->addr_size;
+        case DW_AT_stmt_list:
+            range_addr.debug_line_offset = *reinterpret_cast<std::uint32_t*>
+                (&m_buf[offset]);
             break;
-
-        case DW_AT_ranges:
-            offset += 4;
-            break;
-
-        case DW_AT_language:
-            offset++;
         }
 
+        offset += get_form_size(m_buf[i + 1], debug_info_hdr, offset);
         i += 2;
     }
-
-    range_addr.debug_line_offset = *reinterpret_cast<std::uint32_t*>
-        (&m_buf[offset]);
 
     insert_file_in_map(range_addr);
 }
@@ -213,22 +250,12 @@ void Dwarf::handle_extended_opcode(std::size_t& offset)
         break;
 
     case DW_LNE_set_address:
-        m_reg_address = *reinterpret_cast<std::uint64_t*> (&m_buf[offset + 1]);
+        m_reg_address = *reinterpret_cast<std::uint64_t*>(&m_buf[offset + 1]);
         m_reg_op_index = 0;
-        //std::cout << "extended opcode set address to 0x" << std::hex << m_reg_address << std::endl;
-        break;
-
-    case DW_LNE_define_file:
         break;
 
     case DW_LNE_set_discriminator:
         get_leb128(offset, false, false);
-        break;
-
-    case DW_LNE_lo_user:
-        break;
-
-    case DW_LNE_hi_user:
         break;
 
     default:
@@ -262,9 +289,6 @@ bool Dwarf::handle_special_opcode(std::size_t& offset,
     if (rip == m_reg_address)
         return true;
 
-    /*std::cout << "special opcode addr = 0x" << std::hex << m_reg_address
-        << " line = " << std::dec << m_reg_line << std::endl;*/
-
     return false;
 }
 
@@ -279,7 +303,6 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
     switch (opcode)
     {
     case DW_LNS_copy:
-        //std::printf("DW_LNS_copy not implemented yet :(\n");
         break;
 
     case DW_LNS_advance_pc:
@@ -287,15 +310,14 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
         op_advance *= get_leb128(offset, false);
         tmp_address = m_reg_address;
         m_reg_address += op_advance;
-        //std::cout << "advance pc addr = 0x" << std::hex << m_reg_address << std::endl;
         if (rip >= tmp_address && rip < m_reg_address)
             return true;
+
         break;
 
     case DW_LNS_advance_line:
         op_advance = get_leb128(offset, true);
         m_reg_line += op_advance;
-        //std::cout << "advance line = " << std::dec << m_reg_line << std::endl;
         break;
 
     case DW_LNS_set_file:
@@ -303,16 +325,8 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
         m_reg_file = op_advance;
         break;
 
-    case DW_LNS_set_column:
-        std::printf("DW_LNS_set_column not implemented yet :(\n");
-        break;
-
     case DW_LNS_negate_stmt:
         m_reg_is_stmt = !m_reg_is_stmt;
-        break;
-
-    case DW_LNS_set_basic_block:
-        std::printf("DW_LNS_set_basic_block not implemented yet :(\n");
         break;
 
     case DW_LNS_const_add_pc:
@@ -324,30 +338,19 @@ bool Dwarf::handle_standard_opcode(std::size_t& offset,
 
         m_reg_address += tmp;
 
-        //std::cout << "CONST ADD PC = 0x" << std::hex << m_reg_address << std::endl;
-
         if (rip >= tmp_address && rip < m_reg_address)
             return true;
 
         break;
 
     case DW_LNS_fixed_advance_pc:
-        std::printf("DW_LNS_fixed_advance_pc not implemented yet :(\n");
-        break;
-
-    case DW_LNS_set_prologue_end:
-        std::printf("DW_LNS_set_prologue_end not implemented yet :(\n");
-        break;
-
-    case DW_LNS_set_epilogue_begin:
-        std::printf("DW_LNS_set_epilogue_begin not implemented yet :(\n");
-        break;
-
-    case DW_LNS_set_isa:
-        std::printf("DW_LNS_set_isa not implemented yet :(\n");
+        op_advance = *reinterpret_cast<std::uint16_t*>(&m_buf[offset]);
+        offset += 2;
+        m_reg_address += op_advance;
         break;
 
     default:
+        offset += debug_line_hdr->standard_opcode_lengths[opcode - 1];
         std::printf("Unknown standard opcode: 0x%x\n", opcode);
         std::exit(1);
         break;
@@ -398,7 +401,11 @@ void Dwarf::print_file_line(unsigned char* comp_dir, unsigned char* file_name)
     std::string file_path(reinterpret_cast<char*>(comp_dir));
     std::string file_name_string = reinterpret_cast<char*>(file_name);
 
-    file_path += "/" + file_name_string;
+    if (file_name_string[0] == '/')
+        file_path = file_name_string;
+
+    else
+        file_path += "/" + file_name_string;
 
     std::shared_ptr<std::ifstream> file_ptr = m_map_ifstream[file_path];
     file_ptr->clear();
@@ -444,7 +451,12 @@ void Dwarf::addr2line_print_instruction(std::uint64_t rip,
         &m_buf[m_debug_str->sh_offset + range_addr.debug_str_file_name_offset];
 
     std::cout << std::hex << "0x" << rip << ": ";
-    std::printf("%s/%s:%.5d", comp_dir, file_name, m_reg_line);
+
+    if (file_name[0] == '/')
+        std::printf("%s:%.5d", file_name, m_reg_line);
+
+    else
+        std::printf("%s/%s:%.5d", comp_dir, file_name, m_reg_line);
 
     std::cout << " | ";
     print_file_line(comp_dir, file_name);

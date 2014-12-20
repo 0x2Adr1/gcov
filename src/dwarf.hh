@@ -93,6 +93,8 @@ private:
     void reset_registers();
 
     bool get_line_number(std::uint64_t rip, std::uint32_t debug_line_offset);
+    std::size_t get_form_size(unsigned char byte, struct debug_info_hdr*,
+            std::size_t offset);
 
     void insert_file_in_map(struct range_addr& range_addr);
 
