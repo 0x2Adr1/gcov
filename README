@@ -1,0 +1,46 @@
+PROJECT MY_GCOV
+
+Hi there!
+
+Language: C++ 14
+Compilation: just type make
+
+Usage:
+
+For my_strace   : ./my_gcov --level1 <path_to_bin> [args]
+eg              : ./my_gcov --level1 /bin/ls
+
+For my_sscov    : ./my_gcov --level2 <output_file> <path_to_bin> [args]
+eg              : ./my_gcov --level2 out /bin/ls
+
+For my_addr2line    : ./my_gcov --level3 <path_to_bin> [args]
+eg                  : ./my_gcov --level3 /bin/ls
+
+For my_gcov         : ./my_gcov --level4 <path_to_bin> [args]
+eg                  : ./my_gcov --level4 a.out
+
+The level4 makes a cov_files directory where you can find
+all result of coverage in .cov files.
+
+I do the dwarf parsing in src/my_addr2line/dwarf.cc
+
+Here is how I handle the level 4 :
+
+I put breakpoints on every RET/CALL/JMP in the .text section as mentionned
+in the subject.
+
+I mprotect(PROT_READ | PROT_WRITE) all the dynamic library pages.
+(I look for the page address in /proc/<pid>/maps)
+
+When rip goes outside of .text in a dynamic library page, it segfault.
+I catch the segfault and this time I mprotect(PROT_READ | PROT_WRITE) the
+.text section and mprotect(PROT_READ | PROT_WRITE | PROT_EXEC) the dynamic
+library pages.
+
+etc etc.
+
+With this trick I can find the begin and end of each basic block.
+
+Of course I use the library capstone to display the assembly.
+
+Project tested on Ubuntu x86_64 14.04 with g++ 4.8.2, 4.9.1, 4.9.2 and clang++ 3.5
