@@ -155,7 +155,9 @@ static void trace_child(pid_t pid_child, char** argv)
             continue;
         }
 
-        bp.restore_opcode(user_regs.rip - 1);
+        if (!bp.restore_opcode(user_regs.rip - 1))
+            continue;
+
         restore_breakpoint = true;
         tmp_rip = user_regs.rip - 1;
 
