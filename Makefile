@@ -1,5 +1,5 @@
-CXX = clang++
-CXXFLAGS = -Wall -Wextra -Werror -pedantic -std=c++1y -O2
+CXX = g++
+CXXFLAGS = -Wall -Wextra -Werror -pedantic -std=c++14 -O3
 LDFLAGS = -lcapstone
 
 OBJS = main.o my_strace/my_strace.o my_sscov/my_sscov.o my_sscov/elf.o \
@@ -15,4 +15,4 @@ clean:
 	rm -rf $(OBJS)
 
 distclean: clean
-	rm -rf my_gcov
+	rm -rf my_gcov cov_files
