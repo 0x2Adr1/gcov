@@ -185,7 +185,6 @@ std::size_t Dwarf::get_form_size(unsigned char byte, struct debug_info_hdr*
         return std::strlen(reinterpret_cast<char*>(&m_buf[offset])) + 1;
     }
 
-    std::cerr << "unknown DW_FORM" << std::endl;
     return 0;
 }
 
