@@ -158,7 +158,8 @@ void Breakpoint::put_breakpoints()
                 if (opcode == IS_CALL)
                 {
                     std::uint64_t addr = std::strtoll(m_insn[i].op_str, NULL, 16);
-                    // if we call a function outside of .text, we break on next instruction
+                    // if we call a function outside of .text,
+                    // we put a breakpoint on next instruction
                     if (addr != 0 && !m_elf->is_in_section_text(addr))
                     {
                         put_0xcc(i);
